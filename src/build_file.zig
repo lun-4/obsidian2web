@@ -2,16 +2,30 @@ const std = @import("std");
 
 const StringList = std.ArrayList([]const u8);
 
+pub const ConfigDirectives = struct {
+    strict_links: bool = true,
+    index: ?[]const u8 = null,
+};
+
+fn parseBool(string: []const u8) bool {
+    if (std.mem.eql(u8, "yes", string)) return true;
+    if (std.mem.eql(u8, "no", string)) return false;
+    return false;
+}
+
 pub const BuildFile = struct {
     allocator: std.mem.Allocator,
     vault_path: []const u8,
     includes: StringList,
+    config: ConfigDirectives,
 
     const Self = @This();
 
     pub fn parse(allocator: std.mem.Allocator, input_data: []const u8) !Self {
         var includes = StringList.init(allocator);
         var file_lines_it = std.mem.split(u8, input_data, "\n");
+
+        var config = ConfigDirectives{};
 
         var vault_path: ?[]const u8 = null;
         while (file_lines_it.next()) |line| {
@@ -22,12 +36,15 @@ pub const BuildFile = struct {
             const value = line[first_space_index + 1 ..];
             if (std.mem.eql(u8, "vault", directive)) vault_path = value;
             if (std.mem.eql(u8, "include", directive)) try includes.append(value);
+            if (std.mem.eql(u8, "index", directive)) config.index = value;
+            if (std.mem.eql(u8, "strict_links", directive)) config.strict_links = parseBool(value);
         }
 
         return Self{
             .allocator = allocator,
             .vault_path = vault_path.?,
             .includes = includes,
+            .config = config,
         };
     }
 
@@ -43,10 +60,12 @@ test "build file works" {
         \\include ./
         \\include Folder2/
         \\include TestFile.md
+        \\index Abcdef
     ;
 
     var build_file = try BuildFile.parse(std.testing.allocator, test_file);
     defer build_file.deinit();
     try std.testing.expectEqualStrings("/home/test/vault", build_file.vault_path);
+    try std.testing.expectEqualStrings("Abcdef", build_file.config.index orelse return error.UnexpectedNull);
     try std.testing.expectEqual(@as(usize, 4), build_file.includes.items.len);
 }
