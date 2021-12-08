@@ -2,20 +2,18 @@ const std = @import("std");
 
 const BuildFile = @import("build_file.zig").BuildFile;
 
-const PageMap = std.StringHashMap(void);
+const PageMap = std.StringHashMap(usize);
 const StringPool = std.ArrayList(u8);
 
-fn addToPool(pool: *StringPool, string: []const u8) ![]u8 {
-    const old_len = pool.items.len;
-    try pool.appendSlice(string);
-    return pool.items[old_len..pool.items.len];
+fn addFilePage(pages: *PageMap, path: []const u8) !void {
+    try pages.put(path, 1);
+    try std.testing.expectEqual(@as(?usize, 1), pages.get(path));
 }
 
 pub fn main() anyerror!void {
     var allocator_instance = std.heap.GeneralPurposeAllocator(.{}){};
-    defer {
-        _ = allocator_instance.deinit();
-    }
+    defer _ = allocator_instance.deinit();
+
     var alloc = allocator_instance.allocator();
 
     var args_it = std.process.args();
@@ -37,8 +35,9 @@ pub fn main() anyerror!void {
     var pages = PageMap.init(alloc);
     defer pages.deinit();
 
-    var string_pool = StringPool.init(alloc);
-    defer string_pool.deinit();
+    var arena = std.heap.ArenaAllocator.init(alloc);
+    defer arena.deinit();
+    var string_arena = arena.allocator();
 
     for (build_file.includes.items) |include_path| {
         const joined_path = try std.fs.path.join(alloc, &[_][]const u8{ build_file.vault_path, include_path });
@@ -49,6 +48,8 @@ pub fn main() anyerror!void {
         var included_dir = std.fs.cwd().openDir(joined_path, .{ .iterate = true }) catch |err| switch (err) {
             error.NotDir => {
                 std.log.info("file path from include: {s}", .{joined_path});
+                const owned_path = try string_arena.dupe(u8, joined_path);
+                try addFilePage(&pages, owned_path);
                 continue;
             },
 
@@ -60,13 +61,14 @@ pub fn main() anyerror!void {
         defer walker.deinit();
 
         while (try walker.next()) |entry| {
-            // we do not own the memory given by entry.name, so dupe it
-            // into our string pool
             switch (entry.kind) {
                 .File => {
-                    const path = try addToPool(&string_pool, entry.path);
-                    std.log.info("file path: {s}", .{path});
-                    //try addFilePage(path);
+                    // we do not own the memory given by entry.name, so dupe it
+                    // into our string arena
+
+                    const owned_path = try string_arena.dupe(u8, entry.path);
+                    std.log.info("file path: {s}", .{owned_path});
+                    try addFilePage(&pages, owned_path);
                 },
 
                 else => {},
