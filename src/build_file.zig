@@ -15,7 +15,9 @@ pub const BuildFile = struct {
 
         var vault_path: ?[]const u8 = null;
         while (file_lines_it.next()) |line| {
-            const first_space_index = std.mem.indexOf(u8, line, " ").?;
+            if (line.len == 0) continue;
+            const first_space_index = std.mem.indexOf(u8, line, " ") orelse return error.ParseError;
+
             const directive = std.mem.trim(u8, line[0..first_space_index], "\n");
             const value = line[first_space_index + 1 ..];
             if (std.mem.eql(u8, "vault", directive)) vault_path = value;
