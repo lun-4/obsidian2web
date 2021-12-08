@@ -3,7 +3,6 @@ const std = @import("std");
 const BuildFile = @import("build_file.zig").BuildFile;
 
 const PageMap = std.StringHashMap(usize);
-const StringPool = std.ArrayList(u8);
 
 fn addFilePage(pages: *PageMap, path: []const u8) !void {
     try pages.put(path, 1);
