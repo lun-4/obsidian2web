@@ -2,6 +2,15 @@ const std = @import("std");
 
 const BuildFile = @import("build_file.zig").BuildFile;
 
+const PageMap = std.StringHashMap(void);
+const StringPool = std.ArrayList(u8);
+
+fn addToPool(pool: *StringPool, string: []const u8) ![]u8 {
+    const old_len = pool.items.len;
+    try pool.appendSlice(string);
+    return pool.items[old_len..pool.items.len];
+}
+
 pub fn main() anyerror!void {
     var allocator_instance = std.heap.GeneralPurposeAllocator(.{}){};
     defer {
@@ -21,6 +30,49 @@ pub fn main() anyerror!void {
 
     var build_file = try BuildFile.parse(alloc, build_file_data);
     defer build_file.deinit();
+
+    var vault_dir = try std.fs.cwd().openDir(build_file.vault_path, .{ .iterate = true });
+    defer vault_dir.close();
+
+    var pages = PageMap.init(alloc);
+    defer pages.deinit();
+
+    var string_pool = StringPool.init(alloc);
+    defer string_pool.deinit();
+
+    for (build_file.includes.items) |include_path| {
+        const joined_path = try std.fs.path.join(alloc, &[_][]const u8{ build_file.vault_path, include_path });
+        defer alloc.free(joined_path);
+        std.log.info("include path: {s}", .{joined_path});
+
+        // attempt to openDir first, if it fails assume file
+        var included_dir = std.fs.cwd().openDir(joined_path, .{ .iterate = true }) catch |err| switch (err) {
+            error.NotDir => {
+                std.log.info("file path from include: {s}", .{joined_path});
+                continue;
+            },
+
+            else => return err,
+        };
+        defer included_dir.close();
+
+        var walker = try included_dir.walk(alloc);
+        defer walker.deinit();
+
+        while (try walker.next()) |entry| {
+            // we do not own the memory given by entry.name, so dupe it
+            // into our string pool
+            switch (entry.kind) {
+                .File => {
+                    const path = try addToPool(&string_pool, entry.path);
+                    std.log.info("file path: {s}", .{path});
+                    //try addFilePage(path);
+                },
+
+                else => {},
+            }
+        }
+    }
 }
 
 test "basic test" {
