@@ -1,4 +1,5 @@
 const std = @import("std");
+const koino = @import("koino");
 
 const BuildFile = @import("build_file.zig").BuildFile;
 
@@ -74,6 +75,19 @@ pub fn main() anyerror!void {
             }
         }
     }
+
+    var p = try koino.parser.Parser.init(alloc, .{});
+    defer p.deinit();
+    try p.feed("**a**");
+
+    var doc = try p.finish();
+    defer doc.deinit();
+
+    var result = std.ArrayList(u8).init(alloc);
+    errdefer result.deinit();
+
+    try koino.html.print(result.writer(), alloc, .{}, doc);
+    std.log.info("res:{s}", .{result.toOwnedSlice()});
 }
 
 test "basic test" {
