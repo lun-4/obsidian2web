@@ -113,7 +113,7 @@ pub fn main() anyerror!void {
         defer doc.deinit();
 
         var result = std.ArrayList(u8).init(alloc);
-        errdefer result.deinit();
+        defer result.deinit();
 
         try koino.html.print(result.writer(), alloc, .{}, doc);
 
