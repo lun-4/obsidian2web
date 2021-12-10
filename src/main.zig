@@ -93,11 +93,15 @@ pub fn main() anyerror!void {
     var pages_it = pages.iterator();
 
     var file_buffer: [16384]u8 = undefined;
+
     while (pages_it.next()) |entry| {
+        const local_path = entry.key_ptr.*;
         const fspath = entry.value_ptr.*.filesystem_path;
 
         std.log.info("processing '{s}'", .{fspath});
         var page_fd = try std.fs.cwd().openFile(fspath, .{ .read = true, .write = false });
+        defer page_fd.close();
+
         const read_bytes = try page_fd.read(&file_buffer);
         const file_contents = file_buffer[0..read_bytes];
 
@@ -112,7 +116,24 @@ pub fn main() anyerror!void {
         errdefer result.deinit();
 
         try koino.html.print(result.writer(), alloc, .{}, doc);
-        std.log.info("res:{s}", .{result.items});
+
+        var output_path_buffer: [512]u8 = undefined;
+        var fba = std.heap.FixedBufferAllocator{ .buffer = &output_path_buffer, .end_index = 0 };
+        var fixed_alloc = fba.allocator();
+        // TODO have simple mem.join with slashes since its the web lmao
+        const output_path = try std.fs.path.join(fixed_alloc, &[_][]const u8{ "public", local_path });
+
+        var html_path_buffer: [2048]u8 = undefined;
+        const offset = std.mem.replacementSize(u8, output_path, ".md", ".html");
+        _ = std.mem.replace(u8, output_path, ".md", ".html", &html_path_buffer);
+        const html_path = html_path_buffer[0..offset];
+
+        const leading_path_to_file = std.fs.path.dirname(output_path).?;
+        try std.fs.cwd().makePath(leading_path_to_file);
+
+        var output_fd = try std.fs.cwd().createFile(html_path, .{ .read = false, .truncate = true });
+        defer output_fd.close();
+        _ = try output_fd.write(result.items);
     }
 }
 
