@@ -3,11 +3,27 @@ const koino = @import("koino");
 
 const BuildFile = @import("build_file.zig").BuildFile;
 
-const PageMap = std.StringHashMap(usize);
+const PageBuildStatus = enum {
+    Unbuilt,
+    Built,
+    Error,
+};
 
-fn addFilePage(pages: *PageMap, path: []const u8) !void {
-    try pages.put(path, 1);
-    try std.testing.expectEqual(@as(?usize, 1), pages.get(path));
+const Page = struct {
+    filesystem_path: []const u8,
+    status: PageBuildStatus = .Unbuilt,
+    raw_markdown: ?[]const u8 = null,
+    errors: ?[]const u8 = null,
+};
+const PageMap = std.StringHashMap(Page);
+
+fn addFilePage(
+    pages: *PageMap,
+    local_path: []const u8,
+    fspath: []const u8,
+) !void {
+    std.log.info("new page: local='{s}' fs='{s}'", .{ local_path, fspath });
+    try pages.put(local_path, Page{ .filesystem_path = fspath });
 }
 
 pub fn main() anyerror!void {
@@ -47,9 +63,8 @@ pub fn main() anyerror!void {
         // attempt to openDir first, if it fails assume file
         var included_dir = std.fs.cwd().openDir(joined_path, .{ .iterate = true }) catch |err| switch (err) {
             error.NotDir => {
-                std.log.info("file path from include: {s}", .{joined_path});
                 const owned_path = try string_arena.dupe(u8, joined_path);
-                try addFilePage(&pages, owned_path);
+                try addFilePage(&pages, include_path, owned_path);
                 continue;
             },
 
@@ -63,12 +78,11 @@ pub fn main() anyerror!void {
         while (try walker.next()) |entry| {
             switch (entry.kind) {
                 .File => {
-                    // we do not own the memory given by entry.name, so dupe it
-                    // into our string arena
+                    const joined_inner_path = try std.fs.path.join(string_arena, &[_][]const u8{ joined_path, entry.path });
+                    const joined_local_inner_path = try std.fs.path.join(string_arena, &[_][]const u8{ include_path, entry.path });
 
-                    const owned_path = try string_arena.dupe(u8, entry.path);
-                    std.log.info("file path: {s}", .{owned_path});
-                    try addFilePage(&pages, owned_path);
+                    // we own joined_inner_path's memory, so we can use it
+                    try addFilePage(&pages, joined_local_inner_path, joined_inner_path);
                 },
 
                 else => {},
@@ -76,18 +90,30 @@ pub fn main() anyerror!void {
         }
     }
 
-    var p = try koino.parser.Parser.init(alloc, .{});
-    defer p.deinit();
-    try p.feed("**a**");
+    var pages_it = pages.iterator();
 
-    var doc = try p.finish();
-    defer doc.deinit();
+    var file_buffer: [16384]u8 = undefined;
+    while (pages_it.next()) |entry| {
+        const fspath = entry.value_ptr.*.filesystem_path;
 
-    var result = std.ArrayList(u8).init(alloc);
-    errdefer result.deinit();
+        std.log.info("processing '{s}'", .{fspath});
+        var page_fd = try std.fs.cwd().openFile(fspath, .{ .read = true, .write = false });
+        const read_bytes = try page_fd.read(&file_buffer);
+        const file_contents = file_buffer[0..read_bytes];
 
-    try koino.html.print(result.writer(), alloc, .{}, doc);
-    std.log.info("res:{s}", .{result.toOwnedSlice()});
+        var p = try koino.parser.Parser.init(alloc, .{});
+        defer p.deinit();
+        try p.feed(file_contents);
+
+        var doc = try p.finish();
+        defer doc.deinit();
+
+        var result = std.ArrayList(u8).init(alloc);
+        errdefer result.deinit();
+
+        try koino.html.print(result.writer(), alloc, .{}, doc);
+        std.log.info("res:{s}", .{result.items});
+    }
 }
 
 test "basic test" {
