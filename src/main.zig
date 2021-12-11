@@ -15,16 +15,27 @@ const Page = struct {
     filesystem_path: []const u8,
     status: PageBuildStatus = .Unbuilt,
     html_path: ?[]const u8 = null,
+    web_path: ?[]const u8 = null,
     errors: ?[]const u8 = null,
 };
+
 const PageMap = std.StringHashMap(Page);
+
+// article on path a/b/c/d/e.md is mapped as "e" in this title map.
+const TitleMap = std.StringHashMap([]const u8);
 
 fn addFilePage(
     pages: *PageMap,
+    titles: *TitleMap,
     local_path: []const u8,
     fspath: []const u8,
 ) !void {
     std.log.info("new page: local='{s}' fs='{s}'", .{ local_path, fspath });
+
+    const title_raw = std.fs.path.basename(local_path);
+    const title = title_raw[0 .. title_raw.len - 3];
+    std.log.info("  title='{s}'", .{title});
+    try titles.put(title, local_path);
     try pages.put(local_path, Page{ .filesystem_path = fspath });
 }
 
@@ -53,6 +64,9 @@ pub fn main() anyerror!void {
     var pages = PageMap.init(alloc);
     defer pages.deinit();
 
+    var titles = TitleMap.init(alloc);
+    defer titles.deinit();
+
     var arena = std.heap.ArenaAllocator.init(alloc);
     defer arena.deinit();
     var string_arena = arena.allocator();
@@ -66,7 +80,7 @@ pub fn main() anyerror!void {
         var included_dir = std.fs.cwd().openDir(joined_path, .{ .iterate = true }) catch |err| switch (err) {
             error.NotDir => {
                 const owned_path = try string_arena.dupe(u8, joined_path);
-                try addFilePage(&pages, include_path, owned_path);
+                try addFilePage(&pages, &titles, include_path, owned_path);
                 continue;
             },
 
@@ -84,7 +98,7 @@ pub fn main() anyerror!void {
                     const joined_local_inner_path = try std.fs.path.join(string_arena, &[_][]const u8{ include_path, entry.path });
 
                     // we own joined_inner_path's memory, so we can use it
-                    try addFilePage(&pages, joined_local_inner_path, joined_inner_path);
+                    try addFilePage(&pages, &titles, joined_local_inner_path, joined_inner_path);
                 },
 
                 else => {},
@@ -125,6 +139,7 @@ pub fn main() anyerror!void {
         var fixed_alloc = fba.allocator();
         // TODO have simple mem.join with slashes since its the web lmao
         const output_path = try std.fs.path.join(fixed_alloc, &[_][]const u8{ "public", local_path });
+        const web_path = local_path[0 .. local_path.len - 3];
 
         var html_path_buffer: [2048]u8 = undefined;
         const offset = std.mem.replacementSize(u8, output_path, ".md", ".html");
@@ -139,6 +154,7 @@ pub fn main() anyerror!void {
         _ = try output_fd.write(result.items);
 
         entry.value_ptr.*.html_path = try string_arena.dupe(u8, html_path);
+        entry.value_ptr.*.web_path = try string_arena.dupe(u8, web_path);
         entry.value_ptr.*.status = .Built;
     }
     var link_pages_it = pages.iterator();
@@ -185,11 +201,18 @@ pub fn main() anyerror!void {
             const match = maybe_match.?;
 
             const referenced_title = file_contents[match.start + 2 .. match.end - 2];
+
+            std.log.info("link to '{s}'", .{referenced_title});
+
+            // TODO strict_links support here
+            var page_local_path = titles.get(referenced_title).?;
+            var page = pages.get(page_local_path).?;
+
             _ = if (last_match == null)
                 try result.writer().write(file_contents[0..match.start])
             else
                 try result.writer().write(file_contents[last_match.?.start..match.start]);
-            try result.writer().print("<a href=\"{s}\">{s}</a>", .{ referenced_title, referenced_title });
+            try result.writer().print("<a href=\"{s}.html\">{s}</a>", .{ page.web_path, referenced_title });
             last_match = match;
         }
 
