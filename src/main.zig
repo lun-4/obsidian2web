@@ -13,6 +13,7 @@ const PageBuildStatus = enum {
 
 const Page = struct {
     filesystem_path: []const u8,
+    title: []const u8,
     status: PageBuildStatus = .Unbuilt,
     html_path: ?[]const u8 = null,
     web_path: ?[]const u8 = null,
@@ -37,7 +38,7 @@ fn addFilePage(
     const title = title_raw[0 .. title_raw.len - 3];
     std.log.info("  title='{s}'", .{title});
     try titles.put(title, local_path);
-    try pages.put(local_path, Page{ .filesystem_path = fspath });
+    try pages.put(local_path, Page{ .filesystem_path = fspath, .title = title });
 }
 
 pub fn main() anyerror!void {
@@ -114,6 +115,7 @@ pub fn main() anyerror!void {
     // first pass: use koino to parse all that markdown into html
     while (pages_it.next()) |entry| {
         const local_path = entry.key_ptr.*;
+        const page = entry.value_ptr.*;
         const fspath = entry.value_ptr.*.filesystem_path;
 
         std.log.info("processing '{s}'", .{fspath});
@@ -133,7 +135,24 @@ pub fn main() anyerror!void {
         var result = std.ArrayList(u8).init(alloc);
         defer result.deinit();
 
+        try result.writer().print(
+            \\<!DOCTYPE html>
+            \\<html lang="en">
+            \\  <head>
+            \\    <meta charset="UTF-8">
+            \\    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            \\    <title>{s}</title>
+            \\    <link rel="stylesheet" href="style.css">
+            \\  </head>
+            \\  <body>
+        , .{page.title});
+
         try koino.html.print(result.writer(), alloc, .{}, doc);
+
+        try result.appendSlice(
+            \\  </body>
+            \\</html>
+        );
 
         var output_path_buffer: [512]u8 = undefined;
         var fba = std.heap.FixedBufferAllocator{ .buffer = &output_path_buffer, .end_index = 0 };
