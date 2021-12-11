@@ -5,8 +5,8 @@ description: An HTML renderer for Obsidian vaults
 dev_dependencies:
   - src: system_lib pcre
   - name: libpcre
-    main: .zigmod/deps/git/github.com/kivikakk/koino/vendor/libpcre.zig/src/main.zig
-    src: local libpcre
+    main: src/main.zig
+    src: git https://github.com/lun-4/libpcre.zig
   - src: git https://github.com/kivikakk/koino
     name: koino
     main: src/koino.zig

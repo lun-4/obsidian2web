@@ -179,11 +179,11 @@ pub fn main() anyerror!void {
         }
         const file_contents = file_contents_mut;
 
-        const maybe_captures = (try regex.captures(alloc, file_contents, .{}));
-        // no links, no problem!
-        if (maybe_captures == null) continue;
-        defer alloc.free(maybe_captures.?);
-        const matches = maybe_captures.?;
+        const matches = try regex.captureAll(alloc, file_contents, .{});
+        defer {
+            for (matches.items) |match| alloc.free(match);
+            matches.deinit();
+        }
 
         var result = std.ArrayList(u8).init(alloc);
         defer result.deinit();
@@ -197,12 +197,9 @@ pub fn main() anyerror!void {
         // etc...
         // note: [[x]] will become <a href="/x">x</a>
 
-        for (matches) |maybe_match| {
-            if (maybe_match == null) continue;
-            const match = maybe_match.?;
-
+        for (matches.items) |captures| {
+            const match = captures[0].?;
             const referenced_title = file_contents[match.start + 2 .. match.end - 2];
-
             std.log.info("link to '{s}'", .{referenced_title});
 
             // TODO strict_links support here
@@ -218,7 +215,12 @@ pub fn main() anyerror!void {
         }
 
         // last_match.?.end to end of file
-        _ = try result.writer().write(file_contents[last_match.?.end..file_contents.len]);
+
+        _ = if (last_match == null)
+            try result.writer().write(file_contents[0..file_contents.len])
+        else
+            try result.writer().write(file_contents[last_match.?.end..file_contents.len]);
+
         {
             var page_fd = try std.fs.cwd().openFile(entry.value_ptr.html_path.?, .{ .read = false, .write = true });
             defer page_fd.close();
