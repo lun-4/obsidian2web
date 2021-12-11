@@ -30,6 +30,7 @@ fn addFilePage(
     local_path: []const u8,
     fspath: []const u8,
 ) !void {
+    if (!std.mem.endsWith(u8, local_path, ".md")) return;
     std.log.info("new page: local='{s}' fs='{s}'", .{ local_path, fspath });
 
     const title_raw = std.fs.path.basename(local_path);
@@ -166,7 +167,7 @@ pub fn main() anyerror!void {
         try std.testing.expectEqual(PageBuildStatus.Built, entry.value_ptr.*.status);
         const html_path = entry.value_ptr.html_path.?;
 
-        std.log.info("processing links for '{s}'", .{html_path});
+        std.log.info("processing links for file '{s}'", .{html_path});
 
         var file_contents_mut: []const u8 = undefined;
         {
