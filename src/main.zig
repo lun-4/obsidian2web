@@ -1,18 +1,20 @@
 const std = @import("std");
 const koino = @import("koino");
+const libpcre = @import("libpcre");
 
 const BuildFile = @import("build_file.zig").BuildFile;
 
 const PageBuildStatus = enum {
     Unbuilt,
     Built,
+    Resolved,
     Error,
 };
 
 const Page = struct {
     filesystem_path: []const u8,
     status: PageBuildStatus = .Unbuilt,
-    raw_markdown: ?[]const u8 = null,
+    html_path: ?[]const u8 = null,
     errors: ?[]const u8 = null,
 };
 const PageMap = std.StringHashMap(Page);
@@ -94,6 +96,7 @@ pub fn main() anyerror!void {
 
     var file_buffer: [16384]u8 = undefined;
 
+    // first pass: use koino to parse all that markdown into html
     while (pages_it.next()) |entry| {
         const local_path = entry.key_ptr.*;
         const fspath = entry.value_ptr.*.filesystem_path;
@@ -134,6 +137,72 @@ pub fn main() anyerror!void {
         var output_fd = try std.fs.cwd().createFile(html_path, .{ .read = false, .truncate = true });
         defer output_fd.close();
         _ = try output_fd.write(result.items);
+
+        entry.value_ptr.*.html_path = try string_arena.dupe(u8, html_path);
+        entry.value_ptr.*.status = .Built;
+    }
+    var link_pages_it = pages.iterator();
+
+    // second pass, resolve all the links!
+    const regex = try libpcre.Regex.compile("\\[\\[.+\\]\\]", .{});
+    defer regex.deinit();
+    while (link_pages_it.next()) |entry| {
+        try std.testing.expectEqual(PageBuildStatus.Built, entry.value_ptr.*.status);
+        const html_path = entry.value_ptr.html_path.?;
+
+        std.log.info("processing links for '{s}'", .{html_path});
+
+        var file_contents_mut: []const u8 = undefined;
+        {
+            var page_fd = try std.fs.cwd().openFile(html_path, .{ .read = true, .write = false });
+            defer page_fd.close();
+
+            const read_bytes = try page_fd.read(&file_buffer);
+            file_contents_mut = file_buffer[0..read_bytes];
+        }
+        const file_contents = file_contents_mut;
+
+        const maybe_captures = (try regex.captures(alloc, file_contents, .{}));
+        // no links, no problem!
+        if (maybe_captures == null) continue;
+        defer alloc.free(maybe_captures.?);
+        const matches = maybe_captures.?;
+
+        var result = std.ArrayList(u8).init(alloc);
+        defer result.deinit();
+
+        var last_match: ?libpcre.Capture = null;
+
+        // our replacing algorithm works by copying from 0 to match.start
+        // then printing the <a> tag
+        // our replacing algorithm works by copying from match.end to another_match.start
+        // then printing the <a> tag
+        // etc...
+        // note: [[x]] will become <a href="/x">x</a>
+
+        for (matches) |maybe_match| {
+            if (maybe_match == null) continue;
+            const match = maybe_match.?;
+
+            const referenced_title = file_contents[match.start + 2 .. match.end - 2];
+            _ = if (last_match == null)
+                try result.writer().write(file_contents[0..match.start])
+            else
+                try result.writer().write(file_contents[last_match.?.start..match.start]);
+            try result.writer().print("<a href=\"{s}\">{s}</a>", .{ referenced_title, referenced_title });
+            last_match = match;
+        }
+
+        // last_match.?.end to end of file
+        _ = try result.writer().write(file_contents[last_match.?.end..file_contents.len]);
+        {
+            var page_fd = try std.fs.cwd().openFile(entry.value_ptr.html_path.?, .{ .read = false, .write = true });
+            defer page_fd.close();
+
+            _ = try page_fd.write(result.items);
+
+            entry.value_ptr.*.status = .Resolved;
+        }
     }
 }
 
