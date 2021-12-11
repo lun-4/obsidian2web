@@ -108,6 +108,13 @@ pub fn main() anyerror!void {
         }
     }
 
+    {
+        var styles_css_fd = try std.fs.cwd().createFile("public/styles.css", .{ .truncate = true });
+        defer styles_css_fd.close();
+        const styles_text = @embedFile("resources/styles.css");
+        _ = try styles_css_fd.write(styles_text);
+    }
+
     var pages_it = pages.iterator();
 
     var file_buffer: [16384]u8 = undefined;
@@ -142,9 +149,9 @@ pub fn main() anyerror!void {
             \\    <meta charset="UTF-8">
             \\    <meta name="viewport" content="width=device-width, initial-scale=1.0">
             \\    <title>{s}</title>
-            \\    <link rel="stylesheet" href="style.css">
+            \\    <link rel="stylesheet" href="styles.css">
             \\  </head>
-            \\  <body>
+            \\  <body class="theme-dark">
         , .{page.title});
 
         try koino.html.print(result.writer(), alloc, .{}, doc);
