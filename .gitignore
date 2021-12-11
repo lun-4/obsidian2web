@@ -3,3 +3,5 @@ zig-cache/
 .zigmod/
 .zigmod
 deps.zig
+public/
+*.o2w
