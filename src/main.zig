@@ -209,7 +209,7 @@ pub fn main() anyerror!void {
             _ = if (last_match == null)
                 try result.writer().write(file_contents[0..match.start])
             else
-                try result.writer().write(file_contents[last_match.?.start..match.start]);
+                try result.writer().write(file_contents[last_match.?.end..match.start]);
             try result.writer().print("<a href=\"{s}.html\">{s}</a>", .{ page.web_path, referenced_title });
             last_match = match;
         }
