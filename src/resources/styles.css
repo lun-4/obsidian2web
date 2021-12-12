@@ -24,5 +24,16 @@ code {
   font-size: 0.85em;
 }
 
-body {
+div.toc,
+div.text {
+  display: inline-block;
+  zoom: 1;
+  vertical-align: top;
+}
+
+div.toc {
+  width: 20%;
+}
+div.text {
+  width: 70%;
 }

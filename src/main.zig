@@ -149,14 +149,27 @@ pub fn main() anyerror!void {
             \\    <meta charset="UTF-8">
             \\    <meta name="viewport" content="width=device-width, initial-scale=1.0">
             \\    <title>{s}</title>
-            \\    <link rel="stylesheet" href="styles.css">
+            \\    <link rel="stylesheet" href="/styles.css">
             \\  </head>
-            \\  <body class="theme-dark">
+            \\  <body>
+            \\  <div class="toc">
         , .{page.title});
 
+        // write table of contents
+
+        try result.appendSlice("<p>awooga1</p>");
+        try result.appendSlice("<p>awooga2</p>");
+        try result.appendSlice("<p>awooga3</p>");
+        try result.appendSlice("<p>awooga4</p>");
+
+        try result.appendSlice(
+            \\  </div>
+            \\  <div class="text">
+        );
         try koino.html.print(result.writer(), alloc, .{}, doc);
 
         try result.appendSlice(
+            \\  </div>
             \\  </body>
             \\</html>
         );
