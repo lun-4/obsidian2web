@@ -7,7 +7,6 @@ const BuildFile = @import("build_file.zig").BuildFile;
 const PageBuildStatus = enum {
     Unbuilt,
     Built,
-    Resolved,
     Error,
 };
 
@@ -40,6 +39,56 @@ fn addFilePage(
     try titles.put(title, local_path);
     try pages.put(local_path, Page{ .filesystem_path = fspath, .title = title });
 }
+const StringBuffer = std.ArrayList(u8);
+
+const ProcessorContext = struct {
+    titles: *TitleMap,
+    pages: *PageMap,
+    captures: []?libpcre.Capture,
+    file_contents: []const u8,
+};
+
+const CheckmarkProcessor = struct {
+    regex: libpcre.Regex,
+
+    const Self = @This();
+
+    pub fn deinit(self: *Self) void {
+        self.regex.deinit();
+    }
+
+    pub fn handle(self: *Self, ctx: ProcessorContext, result: *StringBuffer) !void {
+        _ = self;
+        const match = ctx.captures[0].?;
+        const check = ctx.file_contents[match.start..match.end];
+        try result.writer().print("<code>{s}</code>", .{check});
+    }
+};
+
+const LinkProcessor = struct {
+    regex: libpcre.Regex,
+
+    const Self = @This();
+
+    pub fn deinit(self: *Self) void {
+        self.regex.deinit();
+    }
+
+    pub fn handle(self: *Self, ctx: ProcessorContext, result: *StringBuffer) !void {
+        _ = self;
+        const match = ctx.captures[0].?;
+
+        std.log.info("match {} {}", .{ match.start, match.end });
+        const referenced_title = ctx.file_contents[match.start + 2 .. match.end - 2];
+        std.log.info("link to '{s}'", .{referenced_title});
+
+        // TODO strict_links support goes here
+        var page_local_path = ctx.titles.get(referenced_title).?;
+        var page = ctx.pages.get(page_local_path).?;
+
+        try result.writer().print("<a href=\"{s}.html\">{s}</a>", .{ page.web_path, referenced_title });
+    }
+};
 
 pub fn main() anyerror!void {
     var allocator_instance = std.heap.GeneralPurposeAllocator(.{}){};
@@ -197,76 +246,87 @@ pub fn main() anyerror!void {
         entry.value_ptr.*.web_path = try string_arena.dupe(u8, web_path);
         entry.value_ptr.*.status = .Built;
     }
-    var link_pages_it = pages.iterator();
+    const link_processor = LinkProcessor{
+        .regex = try libpcre.Regex.compile("\\[\\[.+\\]\\]", .{}),
+    };
+    const check_processor = CheckmarkProcessor{
+        .regex = try libpcre.Regex.compile("\\[.\\]", .{}),
+    };
 
-    // second pass, resolve all the links!
-    const regex = try libpcre.Regex.compile("\\[\\[.+\\]\\]", .{});
-    defer regex.deinit();
-    while (link_pages_it.next()) |entry| {
-        try std.testing.expectEqual(PageBuildStatus.Built, entry.value_ptr.*.status);
-        const html_path = entry.value_ptr.html_path.?;
+    const processors = .{ link_processor, check_processor };
 
-        std.log.info("processing links for file '{s}'", .{html_path});
+    comptime var i = 0;
+    inline while (i < processors.len) : (i += 1) {
+        var processor = processors[i];
+        defer processor.deinit();
 
-        var file_contents_mut: []const u8 = undefined;
-        {
-            var page_fd = try std.fs.cwd().openFile(html_path, .{ .read = true, .write = false });
-            defer page_fd.close();
+        var link_pages_it = pages.iterator();
+        while (link_pages_it.next()) |entry| {
+            const page = entry.value_ptr.*;
+            try std.testing.expectEqual(PageBuildStatus.Built, page.status);
+            const html_path = entry.value_ptr.html_path.?;
+            std.log.info("running {s} for file '{s}'", .{ @typeName(@TypeOf(processor)), html_path });
 
-            const read_bytes = try page_fd.read(&file_buffer);
-            file_contents_mut = file_buffer[0..read_bytes];
-        }
-        const file_contents = file_contents_mut;
+            var file_contents_mut: []const u8 = undefined;
+            {
+                var page_fd = try std.fs.cwd().openFile(html_path, .{ .read = true, .write = false });
+                defer page_fd.close();
+                const read_bytes = try page_fd.read(&file_buffer);
+                file_contents_mut = file_buffer[0..read_bytes];
+            }
+            const file_contents = file_contents_mut;
 
-        const matches = try regex.captureAll(alloc, file_contents, .{});
-        defer {
-            for (matches.items) |match| alloc.free(match);
-            matches.deinit();
-        }
+            const matches = try processor.regex.captureAll(alloc, file_contents, .{});
+            defer {
+                for (matches.items) |match| alloc.free(match);
+                matches.deinit();
+            }
 
-        var result = std.ArrayList(u8).init(alloc);
-        defer result.deinit();
+            var result = StringBuffer.init(alloc);
+            defer result.deinit();
 
-        var last_match: ?libpcre.Capture = null;
+            // our replacing algorithm works by copying from 0 to match.start
+            // then printing the wanted text
+            // our replacing algorithm works by copying from match.end to another_match.start
+            // then printing the wanted text
+            // etc...
+            // note: [[x]] will become <a href="/x">x</a>
 
-        // our replacing algorithm works by copying from 0 to match.start
-        // then printing the <a> tag
-        // our replacing algorithm works by copying from match.end to another_match.start
-        // then printing the <a> tag
-        // etc...
-        // note: [[x]] will become <a href="/x">x</a>
+            var last_match: ?libpcre.Capture = null;
+            for (matches.items) |captures| {
+                const match = captures[0].?;
+                _ = if (last_match == null)
+                    try result.writer().write(file_contents[0..match.start])
+                else
+                    try result.writer().write(file_contents[last_match.?.end..match.start]);
 
-        for (matches.items) |captures| {
-            const match = captures[0].?;
-            const referenced_title = file_contents[match.start + 2 .. match.end - 2];
-            std.log.info("link to '{s}'", .{referenced_title});
+                var ctx = ProcessorContext{
+                    .titles = &titles,
+                    .pages = &pages,
+                    .captures = captures,
+                    .file_contents = file_contents,
+                };
 
-            // TODO strict_links support here
-            var page_local_path = titles.get(referenced_title).?;
-            var page = pages.get(page_local_path).?;
+                try processor.handle(ctx, &result);
+                last_match = match;
+            }
+
+            // last_match.?.end to end of file
 
             _ = if (last_match == null)
-                try result.writer().write(file_contents[0..match.start])
+                try result.writer().write(file_contents[0..file_contents.len])
             else
-                try result.writer().write(file_contents[last_match.?.end..match.start]);
-            try result.writer().print("<a href=\"{s}.html\">{s}</a>", .{ page.web_path, referenced_title });
-            last_match = match;
-        }
+                try result.writer().write(file_contents[last_match.?.end..file_contents.len]);
 
-        // last_match.?.end to end of file
+            {
+                var page_fd = try std.fs.cwd().openFile(
+                    entry.value_ptr.html_path.?,
+                    .{ .read = false, .write = true },
+                );
+                defer page_fd.close();
 
-        _ = if (last_match == null)
-            try result.writer().write(file_contents[0..file_contents.len])
-        else
-            try result.writer().write(file_contents[last_match.?.end..file_contents.len]);
-
-        {
-            var page_fd = try std.fs.cwd().openFile(entry.value_ptr.html_path.?, .{ .read = false, .write = true });
-            defer page_fd.close();
-
-            _ = try page_fd.write(result.items);
-
-            entry.value_ptr.*.status = .Resolved;
+                _ = try page_fd.write(result.items);
+            }
         }
     }
 }
