@@ -90,6 +90,26 @@ const LinkProcessor = struct {
     }
 };
 
+const Paths = struct { web_path: []const u8, output_path: []const u8, html_path: []const u8 };
+
+pub fn parsePaths(local_path: []const u8, output_path_buffer: []u8, html_path_buffer: []u8) !Paths {
+    var fba = std.heap.FixedBufferAllocator{ .buffer = output_path_buffer, .end_index = 0 };
+    var fixed_alloc = fba.allocator();
+    // TODO have simple mem.join with slashes since its the web lmao
+    const output_path = try std.fs.path.join(fixed_alloc, &[_][]const u8{ "public", local_path });
+    const web_path = local_path[0 .. local_path.len - 3];
+
+    const offset = std.mem.replacementSize(u8, output_path, ".md", ".html");
+    _ = std.mem.replace(u8, output_path, ".md", ".html", html_path_buffer);
+    const html_path = html_path_buffer[0..offset];
+
+    return Paths{
+        .web_path = web_path,
+        .html_path = html_path,
+        .output_path = output_path,
+    };
+}
+
 pub fn main() anyerror!void {
     var allocator_instance = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = allocator_instance.deinit();
@@ -191,6 +211,10 @@ pub fn main() anyerror!void {
         var result = std.ArrayList(u8).init(alloc);
         defer result.deinit();
 
+        var output_path_buffer: [512]u8 = undefined;
+        var html_path_buffer: [2048]u8 = undefined;
+        const paths = try parsePaths(local_path, &output_path_buffer, &html_path_buffer);
+
         try result.writer().print(
             \\<!DOCTYPE html>
             \\<html lang="en">
@@ -206,10 +230,17 @@ pub fn main() anyerror!void {
 
         // write table of contents
 
-        try result.appendSlice("<p>awooga1</p>");
-        try result.appendSlice("<p>awooga2</p>");
-        try result.appendSlice("<p>awooga3</p>");
-        try result.appendSlice("<p>awooga4</p>");
+        var toc_pages_it = pages.iterator();
+
+        // first pass: use koino to parse all that markdown into html
+        while (toc_pages_it.next()) |toc_entry| {
+            const toc_local_path = toc_entry.key_ptr.*;
+            var toc_output_path_buffer: [512]u8 = undefined;
+            var toc_html_path_buffer: [2048]u8 = undefined;
+            const toc_paths = try parsePaths(toc_local_path, &toc_output_path_buffer, &toc_html_path_buffer);
+
+            try result.writer().print("<p><a href=\"{s}.html\">{s}</a></p>", .{ toc_paths.web_path, toc_paths.web_path });
+        }
 
         try result.appendSlice(
             \\  </div>
@@ -223,27 +254,15 @@ pub fn main() anyerror!void {
             \\</html>
         );
 
-        var output_path_buffer: [512]u8 = undefined;
-        var fba = std.heap.FixedBufferAllocator{ .buffer = &output_path_buffer, .end_index = 0 };
-        var fixed_alloc = fba.allocator();
-        // TODO have simple mem.join with slashes since its the web lmao
-        const output_path = try std.fs.path.join(fixed_alloc, &[_][]const u8{ "public", local_path });
-        const web_path = local_path[0 .. local_path.len - 3];
-
-        var html_path_buffer: [2048]u8 = undefined;
-        const offset = std.mem.replacementSize(u8, output_path, ".md", ".html");
-        _ = std.mem.replace(u8, output_path, ".md", ".html", &html_path_buffer);
-        const html_path = html_path_buffer[0..offset];
-
-        const leading_path_to_file = std.fs.path.dirname(output_path).?;
+        const leading_path_to_file = std.fs.path.dirname(paths.output_path).?;
         try std.fs.cwd().makePath(leading_path_to_file);
 
-        var output_fd = try std.fs.cwd().createFile(html_path, .{ .read = false, .truncate = true });
+        var output_fd = try std.fs.cwd().createFile(paths.html_path, .{ .read = false, .truncate = true });
         defer output_fd.close();
         _ = try output_fd.write(result.items);
 
-        entry.value_ptr.*.html_path = try string_arena.dupe(u8, html_path);
-        entry.value_ptr.*.web_path = try string_arena.dupe(u8, web_path);
+        entry.value_ptr.*.html_path = try string_arena.dupe(u8, paths.html_path);
+        entry.value_ptr.*.web_path = try string_arena.dupe(u8, paths.web_path);
         entry.value_ptr.*.status = .Built;
     }
     const link_processor = LinkProcessor{
