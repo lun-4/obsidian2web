@@ -37,3 +37,7 @@ div.toc {
 div.text {
   width: 70%;
 }
+
+a.toc-link {
+  color: aliceblue;
+}

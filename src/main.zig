@@ -2,6 +2,7 @@ const std = @import("std");
 const koino = @import("koino");
 const libpcre = @import("libpcre");
 
+const StringList = std.ArrayList(u8);
 const BuildFile = @import("build_file.zig").BuildFile;
 
 const PageBuildStatus = enum {
@@ -24,9 +25,71 @@ const PageMap = std.StringHashMap(Page);
 // article on path a/b/c/d/e.md is mapped as "e" in this title map.
 const TitleMap = std.StringHashMap([]const u8);
 
+const PageFile = union(enum) {
+    dir: PageFolder,
+    file: void,
+};
+
+const PageFolder = std.StringHashMap(PageFile);
+
+/// recursively deinitialize a PageFolder
+fn deinitPageFolder(folder: *PageFolder) void {
+    var folder_it = folder.iterator();
+    while (folder_it.next()) |entry| {
+        var child = entry.value_ptr;
+        switch (child.*) {
+            .dir => |*child_folder| deinitPageFolder(child_folder),
+            .file => {},
+        }
+    }
+    folder.deinit();
+}
+
+const PageTree = struct {
+    allocator: std.mem.Allocator,
+    root: PageFolder,
+
+    const Self = @This();
+
+    pub fn init(allocator: std.mem.Allocator) Self {
+        return Self{
+            .allocator = allocator,
+            .root = PageFolder.init(allocator),
+        };
+    }
+    pub fn deinit(self: *Self) void {
+        deinitPageFolder(&self.root);
+    }
+    pub fn addPage(self: *Self, fspath: []const u8) !void {
+        const total_seps = std.mem.count(u8, fspath, &[_]u8{std.fs.path.sep});
+        var path_it = std.mem.split(u8, fspath, &[_]u8{std.fs.path.sep});
+
+        var current_page: ?*PageFolder = &self.root;
+        var idx: usize = 0;
+        while (true) : (idx += 1) {
+            const maybe_path_component = path_it.next();
+            if (maybe_path_component == null) break;
+            const path_component = maybe_path_component.?;
+
+            if (current_page.?.getPtr(path_component)) |child_page| {
+                current_page = &child_page.dir;
+            } else {
+
+                // if last component, create file (and set current_page to null), else, create folder
+                if (idx == total_seps) {
+                    try current_page.?.put(path_component, .{ .file = {} });
+                } else {
+                    try current_page.?.put(path_component, .{ .dir = PageFolder.init(self.allocator) });
+                }
+            }
+        }
+    }
+};
+
 fn addFilePage(
     pages: *PageMap,
     titles: *TitleMap,
+    tree: *PageTree,
     local_path: []const u8,
     fspath: []const u8,
 ) !void {
@@ -38,6 +101,7 @@ fn addFilePage(
     std.log.info("  title='{s}'", .{title});
     try titles.put(title, local_path);
     try pages.put(local_path, Page{ .filesystem_path = fspath, .title = title });
+    try tree.addPage(fspath);
 }
 const StringBuffer = std.ArrayList(u8);
 
@@ -110,6 +174,25 @@ pub fn parsePaths(local_path: []const u8, output_path_buffer: []u8, html_path_bu
     };
 }
 
+pub fn generateToc(allocator: std.mem.Allocator, pages: *const PageMap) ![]const u8 {
+    var result = StringList.init(allocator);
+    defer result.deinit();
+    // write table of contents
+
+    var toc_pages_it = pages.iterator();
+
+    // first pass: use koino to parse all that markdown into html
+    while (toc_pages_it.next()) |toc_entry| {
+        const toc_local_path = toc_entry.key_ptr.*;
+        var toc_output_path_buffer: [512]u8 = undefined;
+        var toc_html_path_buffer: [2048]u8 = undefined;
+        const toc_paths = try parsePaths(toc_local_path, &toc_output_path_buffer, &toc_html_path_buffer);
+
+        try result.writer().print("<p><a class=\"toc-link\" href=\"/{s}.html\">{s}</a></p>", .{ toc_paths.web_path, toc_paths.web_path });
+    }
+    return result.toOwnedSlice();
+}
+
 pub fn main() anyerror!void {
     var allocator_instance = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = allocator_instance.deinit();
@@ -142,16 +225,20 @@ pub fn main() anyerror!void {
     defer arena.deinit();
     var string_arena = arena.allocator();
 
+    var tree = PageTree.init(alloc);
+    defer tree.deinit();
+
     for (build_file.includes.items) |include_path| {
-        const joined_path = try std.fs.path.join(alloc, &[_][]const u8{ build_file.vault_path, include_path });
+        const joined_path = try std.fs.path.resolve(alloc, &[_][]const u8{ build_file.vault_path, include_path });
         defer alloc.free(joined_path);
+
         std.log.info("include path: {s}", .{joined_path});
 
         // attempt to openDir first, if it fails assume file
         var included_dir = std.fs.cwd().openDir(joined_path, .{ .iterate = true }) catch |err| switch (err) {
             error.NotDir => {
                 const owned_path = try string_arena.dupe(u8, joined_path);
-                try addFilePage(&pages, &titles, include_path, owned_path);
+                try addFilePage(&pages, &titles, &tree, include_path, owned_path);
                 continue;
             },
 
@@ -169,7 +256,7 @@ pub fn main() anyerror!void {
                     const joined_local_inner_path = try std.fs.path.join(string_arena, &[_][]const u8{ include_path, entry.path });
 
                     // we own joined_inner_path's memory, so we can use it
-                    try addFilePage(&pages, &titles, joined_local_inner_path, joined_inner_path);
+                    try addFilePage(&pages, &titles, &tree, joined_local_inner_path, joined_inner_path);
                 },
 
                 else => {},
@@ -187,6 +274,9 @@ pub fn main() anyerror!void {
     var pages_it = pages.iterator();
 
     var file_buffer: [16384]u8 = undefined;
+
+    const toc = try generateToc(alloc, &pages);
+    defer alloc.free(toc);
 
     // first pass: use koino to parse all that markdown into html
     while (pages_it.next()) |entry| {
@@ -208,7 +298,7 @@ pub fn main() anyerror!void {
         var doc = try p.finish();
         defer doc.deinit();
 
-        var result = std.ArrayList(u8).init(alloc);
+        var result = StringList.init(alloc);
         defer result.deinit();
 
         var output_path_buffer: [512]u8 = undefined;
@@ -228,19 +318,7 @@ pub fn main() anyerror!void {
             \\  <div class="toc">
         , .{page.title});
 
-        // write table of contents
-
-        var toc_pages_it = pages.iterator();
-
-        // first pass: use koino to parse all that markdown into html
-        while (toc_pages_it.next()) |toc_entry| {
-            const toc_local_path = toc_entry.key_ptr.*;
-            var toc_output_path_buffer: [512]u8 = undefined;
-            var toc_html_path_buffer: [2048]u8 = undefined;
-            const toc_paths = try parsePaths(toc_local_path, &toc_output_path_buffer, &toc_html_path_buffer);
-
-            try result.writer().print("<p><a href=\"{s}.html\">{s}</a></p>", .{ toc_paths.web_path, toc_paths.web_path });
-        }
+        try result.appendSlice(toc);
 
         try result.appendSlice(
             \\  </div>
