@@ -176,7 +176,6 @@ pub fn parsePaths(local_path: []const u8, output_path_buffer: []u8, html_path_bu
             '&' => try result.appendSlice("%26"),
             '+' => try result.appendSlice("%2B"),
             ',' => try result.appendSlice("%2C"),
-            '/' => try result.appendSlice("%2F"),
             ':' => try result.appendSlice("%3A"),
             ';' => try result.appendSlice("%3B"),
             '=' => try result.appendSlice("%3D"),
