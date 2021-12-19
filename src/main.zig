@@ -161,11 +161,32 @@ pub fn parsePaths(local_path: []const u8, output_path_buffer: []u8, html_path_bu
     var fixed_alloc = fba.allocator();
     // TODO have simple mem.join with slashes since its the web lmao
     const output_path = try std.fs.path.join(fixed_alloc, &[_][]const u8{ "public", local_path });
-    const web_path = local_path[0 .. local_path.len - 3];
+    const web_path_raw = local_path[0 .. local_path.len - 3];
 
     const offset = std.mem.replacementSize(u8, output_path, ".md", ".html");
     _ = std.mem.replace(u8, output_path, ".md", ".html", html_path_buffer);
     const html_path = html_path_buffer[0..offset];
+
+    var result = StringList.init(fixed_alloc);
+    defer result.deinit();
+
+    for (web_path_raw) |char| {
+        switch (char) {
+            '$' => try result.appendSlice("%24"),
+            '&' => try result.appendSlice("%26"),
+            '+' => try result.appendSlice("%2B"),
+            ',' => try result.appendSlice("%2C"),
+            '/' => try result.appendSlice("%2F"),
+            ':' => try result.appendSlice("%3A"),
+            ';' => try result.appendSlice("%3B"),
+            '=' => try result.appendSlice("%3D"),
+            '?' => try result.appendSlice("%3F"),
+            '@' => try result.appendSlice("%40"),
+            else => try result.append(char),
+        }
+    }
+
+    const web_path = result.toOwnedSlice();
 
     return Paths{
         .web_path = web_path,
@@ -243,7 +264,7 @@ pub fn generateToc(
         var toc_html_path_buffer: [2048]u8 = undefined;
         const toc_paths = try parsePaths(local_path, &toc_output_path_buffer, &toc_html_path_buffer);
 
-        const title = std.fs.path.basename(toc_paths.web_path);
+        const title = std.fs.path.basename(toc_paths.output_path);
 
         try result.writer().print(
             "<li><a class=\"toc-link\" href=\"/{s}.html\">{s}</a></li>",
