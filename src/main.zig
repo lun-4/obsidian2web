@@ -357,6 +357,7 @@ pub fn main() anyerror!void {
 
     var pages_it = pages.iterator();
 
+    // TODO maybe use readAlloc with std.math.max(usize) lol
     var file_buffer: [32768 * 2]u8 = undefined;
 
     var toc_result = StringList.init(alloc);

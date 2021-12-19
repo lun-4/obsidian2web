@@ -38,9 +38,20 @@ div.text {
   width: 70%;
 }
 
+/* <a> links still live in a dark background, so fix that */
+a {
+  color: aqua;
+}
+
+a:hover {
+  color: white;
+}
+
+/* toc links are treated differently */
 a.toc-link {
   color: aliceblue;
 }
+
 a.toc-link:hover {
   color: blue;
 }
