@@ -27,7 +27,7 @@ const TitleMap = std.StringHashMap([]const u8);
 
 const PageFile = union(enum) {
     dir: PageFolder,
-    file: void,
+    file: []const u8,
 };
 
 const PageFolder = std.StringHashMap(PageFile);
@@ -77,7 +77,7 @@ const PageTree = struct {
 
                 // if last component, create file (and set current_page to null), else, create folder
                 if (idx == total_seps) {
-                    try current_page.?.put(path_component, .{ .file = {} });
+                    try current_page.?.put(path_component, .{ .file = fspath });
                 } else {
                     try current_page.?.put(path_component, .{ .dir = PageFolder.init(self.allocator) });
                 }
@@ -237,20 +237,22 @@ pub fn generateToc(
         try generateToc(result, pages, &child_folder_entry.value_ptr.*.dir, context);
     }
     for (files.items) |file_name| {
-        _ = folder.get(file_name).?.file;
-        try result.writer().print("<li>{s}</li>", .{file_name});
+        const local_path = folder.get(file_name).?.file;
+
+        var toc_output_path_buffer: [512]u8 = undefined;
+        var toc_html_path_buffer: [2048]u8 = undefined;
+        const toc_paths = try parsePaths(local_path, &toc_output_path_buffer, &toc_html_path_buffer);
+
+        const title = std.fs.path.basename(toc_paths.web_path);
+
+        try result.writer().print(
+            "<li><a class=\"toc-link\" href=\"/{s}.html\">{s}</a></li>",
+            .{ toc_paths.web_path, title },
+        );
     }
+
     if (context.ident > 0)
         try result.writer().print("</ul>", .{});
-
-    // while (folder_iterator.next()) |toc_entry| {
-    //     const toc_local_path = toc_entry.key_ptr.*;
-    //     var toc_output_path_buffer: [512]u8 = undefined;
-    //     var toc_html_path_buffer: [2048]u8 = undefined;
-    //     const toc_paths = try parsePaths(toc_local_path, &toc_output_path_buffer, &toc_html_path_buffer);
-
-    //     try result.writer().print("<p><a class=\"toc-link\" href=\"/{s}.html\">{s}</a></p>", .{ toc_paths.web_path, toc_paths.web_path });
-    // }
 }
 
 pub fn main() anyerror!void {
