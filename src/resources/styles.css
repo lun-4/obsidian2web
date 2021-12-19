@@ -41,6 +41,9 @@ div.text {
 a.toc-link {
   color: aliceblue;
 }
+a.toc-link:hover {
+  color: blue;
+}
 
 /* Remove default bullets */
 ul,
