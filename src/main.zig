@@ -176,6 +176,20 @@ pub fn parsePaths(local_path: []const u8, output_path_buffer: []u8, html_path_bu
 
 const SliceList = std.ArrayList([]const u8);
 
+const lexicographicalCompare = struct {
+    pub fn inner(innerCtx: void, a: []const u8, b: []const u8) bool {
+        _ = innerCtx;
+
+        var i: usize = 0;
+        if (a.len == 0 or b.len == 0) return false;
+        while (a[i] == b[i]) : (i += 1) {
+            if (i == a.len or i == b.len) return false;
+        }
+
+        return a[i] < b[i];
+    }
+}.inner;
+
 /// Generate Table of Contents given the root folder.
 ///
 /// Operates recursively.
@@ -198,6 +212,9 @@ pub fn generateToc(result: *StringList, pages: *const PageMap, folder: *const Pa
             .file => try files.append(entry.key_ptr.*),
         }
     }
+
+    std.sort.sort([]const u8, folders.items, {}, lexicographicalCompare);
+    std.sort.sort([]const u8, files.items, {}, lexicographicalCompare);
 
     // draw folders first (by recursing), then draw files second!
     for (folders.items) |folder_name| {
