@@ -174,23 +174,51 @@ pub fn parsePaths(local_path: []const u8, output_path_buffer: []u8, html_path_bu
     };
 }
 
-pub fn generateToc(allocator: std.mem.Allocator, pages: *const PageMap) ![]const u8 {
-    var result = StringList.init(allocator);
-    defer result.deinit();
-    // write table of contents
+const SliceList = std.ArrayList([]const u8);
 
-    var toc_pages_it = pages.iterator();
+/// Generate Table of Contents given the root folder.
+///
+/// Operates recursively.
+pub fn generateToc(result: *StringList, pages: *const PageMap, folder: *const PageFolder, context: struct {
+    current_relative_path: ?[]const u8 = null,
+}) error{OutOfMemory}!void {
+    var folder_iterator = folder.iterator();
 
-    // first pass: use koino to parse all that markdown into html
-    while (toc_pages_it.next()) |toc_entry| {
-        const toc_local_path = toc_entry.key_ptr.*;
-        var toc_output_path_buffer: [512]u8 = undefined;
-        var toc_html_path_buffer: [2048]u8 = undefined;
-        const toc_paths = try parsePaths(toc_local_path, &toc_output_path_buffer, &toc_html_path_buffer);
+    // step 1: find all the folders at this level.
 
-        try result.writer().print("<p><a class=\"toc-link\" href=\"/{s}.html\">{s}</a></p>", .{ toc_paths.web_path, toc_paths.web_path });
+    var folders = SliceList.init(result.allocator);
+    defer folders.deinit();
+
+    var files = SliceList.init(result.allocator);
+    defer files.deinit();
+
+    while (folder_iterator.next()) |entry| {
+        switch (entry.value_ptr.*) {
+            .dir => try folders.append(entry.key_ptr.*),
+            .file => try files.append(entry.key_ptr.*),
+        }
     }
-    return result.toOwnedSlice();
+
+    // draw folders first (by recursing), then draw files second!
+    for (folders.items) |folder_name| {
+        const child_folder_entry = folder.getEntry(folder_name).?;
+        try result.writer().print("<p><a class=\"toc-folder\">{s}</a></p>", .{folder_name});
+
+        try generateToc(result, pages, &child_folder_entry.value_ptr.*.dir, context);
+    }
+    for (files.items) |file_name| {
+        _ = folder.get(file_name).?.file;
+        try result.writer().print("<p><a class=\"toc-file\">{s}</a></p>", .{file_name});
+    }
+
+    // while (folder_iterator.next()) |toc_entry| {
+    //     const toc_local_path = toc_entry.key_ptr.*;
+    //     var toc_output_path_buffer: [512]u8 = undefined;
+    //     var toc_html_path_buffer: [2048]u8 = undefined;
+    //     const toc_paths = try parsePaths(toc_local_path, &toc_output_path_buffer, &toc_html_path_buffer);
+
+    //     try result.writer().print("<p><a class=\"toc-link\" href=\"/{s}.html\">{s}</a></p>", .{ toc_paths.web_path, toc_paths.web_path });
+    // }
 }
 
 pub fn main() anyerror!void {
@@ -275,7 +303,12 @@ pub fn main() anyerror!void {
 
     var file_buffer: [16384]u8 = undefined;
 
-    const toc = try generateToc(alloc, &pages);
+    var toc_result = StringList.init(alloc);
+    defer toc_result.deinit();
+
+    try generateToc(&toc_result, &pages, &tree.root, .{});
+
+    const toc = toc_result.toOwnedSlice();
     defer alloc.free(toc);
 
     // first pass: use koino to parse all that markdown into html
