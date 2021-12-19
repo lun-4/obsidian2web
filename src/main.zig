@@ -397,10 +397,15 @@ pub fn main() anyerror!void {
             \\  </div>
             \\  <div class="text">
         );
+
+        try result.writer().print(
+            \\  <h2>{s}</h2><p>
+        , .{page.title});
+
         try koino.html.print(result.writer(), alloc, .{}, doc);
 
         try result.appendSlice(
-            \\  </div>
+            \\  </p></div>
             \\  </body>
             \\</html>
         );
