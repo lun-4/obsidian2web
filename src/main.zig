@@ -101,7 +101,7 @@ fn addFilePage(
     std.log.info("  title='{s}'", .{title});
     try titles.put(title, local_path);
     try pages.put(local_path, Page{ .filesystem_path = fspath, .title = title });
-    try tree.addPage(fspath);
+    try tree.addPage(local_path);
 }
 const StringBuffer = std.ArrayList(u8);
 
@@ -190,12 +190,20 @@ const lexicographicalCompare = struct {
     }
 }.inner;
 
+const TocContext = struct {
+    current_relative_path: ?[]const u8 = null,
+    ident: usize = 0,
+};
+
 /// Generate Table of Contents given the root folder.
 ///
 /// Operates recursively.
-pub fn generateToc(result: *StringList, pages: *const PageMap, folder: *const PageFolder, context: struct {
-    current_relative_path: ?[]const u8 = null,
-}) error{OutOfMemory}!void {
+pub fn generateToc(
+    result: *StringList,
+    pages: *const PageMap,
+    folder: *const PageFolder,
+    context: *TocContext,
+) error{OutOfMemory}!void {
     var folder_iterator = folder.iterator();
 
     // step 1: find all the folders at this level.
@@ -217,16 +225,23 @@ pub fn generateToc(result: *StringList, pages: *const PageMap, folder: *const Pa
     std.sort.sort([]const u8, files.items, {}, lexicographicalCompare);
 
     // draw folders first (by recursing), then draw files second!
+    if (context.ident > 0)
+        try result.writer().print("<ul class=\"nested\">", .{});
     for (folders.items) |folder_name| {
         const child_folder_entry = folder.getEntry(folder_name).?;
-        try result.writer().print("<p><a class=\"toc-folder\">{s}</a></p>", .{folder_name});
+        try result.writer().print("<li><span class=\"caret\">{s}</span>", .{folder_name});
+
+        context.ident += 1;
+        defer context.ident -= 1;
 
         try generateToc(result, pages, &child_folder_entry.value_ptr.*.dir, context);
     }
     for (files.items) |file_name| {
         _ = folder.get(file_name).?.file;
-        try result.writer().print("<p><a class=\"toc-file\">{s}</a></p>", .{file_name});
+        try result.writer().print("<li>{s}</li>", .{file_name});
     }
+    if (context.ident > 0)
+        try result.writer().print("</ul>", .{});
 
     // while (folder_iterator.next()) |toc_entry| {
     //     const toc_local_path = toc_entry.key_ptr.*;
@@ -309,11 +324,13 @@ pub fn main() anyerror!void {
         }
     }
 
-    {
-        var styles_css_fd = try std.fs.cwd().createFile("public/styles.css", .{ .truncate = true });
-        defer styles_css_fd.close();
-        const styles_text = @embedFile("resources/styles.css");
-        _ = try styles_css_fd.write(styles_text);
+    const resources = .{ .{ "resources/styles.css", "styles.css" }, .{ "resources/main.js", "main.js" } };
+
+    inline for (resources) |resource| {
+        const resource_text = @embedFile(resource.@"0");
+        var resource_fd = try std.fs.cwd().createFile("public/" ++ resource.@"1", .{ .truncate = true });
+        defer resource_fd.close();
+        _ = try resource_fd.write(resource_text);
     }
 
     var pages_it = pages.iterator();
@@ -323,7 +340,10 @@ pub fn main() anyerror!void {
     var toc_result = StringList.init(alloc);
     defer toc_result.deinit();
 
-    try generateToc(&toc_result, &pages, &tree.root, .{});
+    try toc_result.writer().print("<ul id=\"tree-of-contents\">", .{});
+    var toc_ctx: TocContext = .{};
+    try generateToc(&toc_result, &pages, &tree.root.getPtr(".").?.dir, &toc_ctx);
+    try toc_result.writer().print("</ul>", .{});
 
     const toc = toc_result.toOwnedSlice();
     defer alloc.free(toc);
@@ -362,6 +382,7 @@ pub fn main() anyerror!void {
             \\    <meta charset="UTF-8">
             \\    <meta name="viewport" content="width=device-width, initial-scale=1.0">
             \\    <title>{s}</title>
+            \\    <script src="/main.js"></script>
             \\    <link rel="stylesheet" href="/styles.css">
             \\  </head>
             \\  <body>
