@@ -357,7 +357,7 @@ pub fn main() anyerror!void {
 
     var pages_it = pages.iterator();
 
-    var file_buffer: [16384]u8 = undefined;
+    var file_buffer: [32768 * 2]u8 = undefined;
 
     var toc_result = StringList.init(alloc);
     defer toc_result.deinit();
