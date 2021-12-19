@@ -185,7 +185,7 @@ pub fn parsePaths(local_path: []const u8, output_path_buffer: []u8, html_path_bu
         }
     }
 
-    const web_path = result.toOwnedSlice();
+    const web_path = std.mem.trimLeft(u8, result.toOwnedSlice(), ".");
 
     return Paths{
         .web_path = web_path,
@@ -266,7 +266,7 @@ pub fn generateToc(
         const title = std.fs.path.basename(toc_paths.output_path);
 
         try result.writer().print(
-            "<li><a class=\"toc-link\" href=\"/{s}.html\">{s}</a></li>",
+            "<li><a class=\"toc-link\" href=\"{s}.html\">{s}</a></li>",
             .{ toc_paths.web_path, title },
         );
     }
