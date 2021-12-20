@@ -80,6 +80,7 @@ const PageTree = struct {
                     try current_page.?.put(path_component, .{ .file = fspath });
                 } else {
                     try current_page.?.put(path_component, .{ .dir = PageFolder.init(self.allocator) });
+                    current_page = &current_page.?.getPtr(path_component).?.dir;
                 }
             }
         }
