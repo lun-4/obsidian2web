@@ -351,7 +351,12 @@ pub fn main() anyerror!void {
 
     inline for (resources) |resource| {
         const resource_text = @embedFile(resource.@"0");
-        var resource_fd = try std.fs.cwd().createFile("public/" ++ resource.@"1", .{ .truncate = true });
+
+        const resource_fspath = "public/" ++ resource.@"1";
+        const leading_path_to_file = std.fs.path.dirname(resource_fspath).?;
+        try std.fs.cwd().makePath(leading_path_to_file);
+
+        var resource_fd = try std.fs.cwd().createFile(resource_fspath, .{ .truncate = true });
         defer resource_fd.close();
         _ = try resource_fd.write(resource_text);
     }
