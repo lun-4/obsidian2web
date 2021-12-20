@@ -424,7 +424,7 @@ pub fn main() anyerror!void {
             \\  <h2>{s}</h2><p>
         , .{page.title});
 
-        try koino.html.print(result.writer(), alloc, .{}, doc);
+        try koino.html.print(result.writer(), alloc, .{ .render = .{ .hard_breaks = true } }, doc);
 
         try result.appendSlice(
             \\  </p></div>
