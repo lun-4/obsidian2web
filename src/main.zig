@@ -531,29 +531,59 @@ pub fn main() anyerror!void {
             }
         }
     }
-
-    if (build_file.config.index) |path_to_index_file| {
-        // just copy the html into index.html LOL
-        var output_path_buffer: [512]u8 = undefined;
-        var html_path_buffer: [2048]u8 = undefined;
-
-        const paths = try parsePaths(path_to_index_file, &output_path_buffer, &html_path_buffer);
-
-        std.log.info("copying '{s}' to index.html", .{paths.html_path});
-        const index_fd = try std.fs.cwd().openFile(paths.html_path, .{ .read = true, .write = false });
-        defer index_fd.close();
-
+    {
         const index_out_fd = try std.fs.cwd().createFile("public/index.html", .{ .truncate = true });
         defer index_out_fd.close();
 
-        // TODO use std.fs.File.copyRangeAll instead of reading it into memory then writing
-        const index_contents = try index_fd.reader().readAllAlloc(alloc, std.math.maxInt(usize));
-        defer alloc.free(index_contents);
+        if (build_file.config.index) |path_to_index_file| {
+            // just copy the html into index.html LOL
+            var output_path_buffer: [512]u8 = undefined;
+            var html_path_buffer: [2048]u8 = undefined;
 
-        const written_bytes = try index_out_fd.write(index_contents);
-        try std.testing.expectEqual(written_bytes, index_contents.len);
-    } else {
-        // generate our own empty file that contains the table of contents
+            const paths = try parsePaths(path_to_index_file, &output_path_buffer, &html_path_buffer);
+
+            std.log.info("copying '{s}' to index.html", .{paths.html_path});
+            const index_fd = try std.fs.cwd().openFile(paths.html_path, .{ .read = true, .write = false });
+            defer index_fd.close();
+
+            // TODO use std.fs.File.copyRangeAll instead of reading it into memory then writing
+            const index_contents = try index_fd.reader().readAllAlloc(alloc, std.math.maxInt(usize));
+            defer alloc.free(index_contents);
+
+            const written_bytes = try index_out_fd.write(index_contents);
+            try std.testing.expectEqual(written_bytes, index_contents.len);
+        } else {
+            // generate our own empty file that contains the table of contents
+
+            const writer = index_out_fd.writer();
+
+            try writer.print(
+                \\<!DOCTYPE html>
+                \\<html lang="en">
+                \\  <head>
+                \\    <meta charset="UTF-8">
+                \\    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                \\    <title>{s}</title>
+                \\    <script src="/main.js"></script>
+                \\    <link rel="stylesheet" href="/styles.css">
+                \\  </head>
+                \\  <body>
+                \\  <div class="toc">
+            , .{"Index Page"});
+
+            _ = try writer.write(toc);
+
+            _ = try writer.write(
+                \\  </div>
+                \\  <div class="text">
+            );
+
+            _ = try writer.write(
+                \\  </div>
+                \\  </body>
+                \\</html>
+            );
+        }
     }
 }
 
