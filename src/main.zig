@@ -547,12 +547,10 @@ pub fn main() anyerror!void {
             const index_fd = try std.fs.cwd().openFile(paths.html_path, .{ .read = true, .write = false });
             defer index_fd.close();
 
-            // TODO use std.fs.File.copyRangeAll instead of reading it into memory then writing
-            const index_contents = try index_fd.reader().readAllAlloc(alloc, std.math.maxInt(usize));
-            defer alloc.free(index_contents);
+            const written_bytes =
+                try index_fd.copyRangeAll(0, index_out_fd, 0, std.math.maxInt(u64));
 
-            const written_bytes = try index_out_fd.write(index_contents);
-            try std.testing.expectEqual(written_bytes, index_contents.len);
+            try std.testing.expect(written_bytes > 0);
         } else {
             // generate our own empty file that contains the table of contents
 
