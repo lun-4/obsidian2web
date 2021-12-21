@@ -363,9 +363,6 @@ pub fn main() anyerror!void {
 
     var pages_it = pages.iterator();
 
-    // TODO maybe use readAlloc with std.math.max(usize) lol
-    var file_buffer: [32768 * 2]u8 = undefined;
-
     var toc_result = StringList.init(alloc);
     defer toc_result.deinit();
 
@@ -387,8 +384,8 @@ pub fn main() anyerror!void {
         var page_fd = try std.fs.cwd().openFile(fspath, .{ .read = true, .write = false });
         defer page_fd.close();
 
-        const read_bytes = try page_fd.read(&file_buffer);
-        const file_contents = file_buffer[0..read_bytes];
+        const file_contents = try page_fd.reader().readAllAlloc(alloc, std.math.maxInt(usize));
+        defer alloc.free(file_contents);
 
         var p = try koino.parser.Parser.init(alloc, .{});
         defer p.deinit();
@@ -473,10 +470,11 @@ pub fn main() anyerror!void {
             {
                 var page_fd = try std.fs.cwd().openFile(html_path, .{ .read = true, .write = false });
                 defer page_fd.close();
-                const read_bytes = try page_fd.read(&file_buffer);
-                file_contents_mut = file_buffer[0..read_bytes];
+
+                file_contents_mut = try page_fd.reader().readAllAlloc(alloc, std.math.maxInt(usize));
             }
             const file_contents = file_contents_mut;
+            defer alloc.free(file_contents);
 
             const matches = try processor.regex.captureAll(alloc, file_contents, .{});
             defer {
