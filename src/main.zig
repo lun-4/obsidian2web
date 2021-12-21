@@ -389,6 +389,9 @@ pub fn main() anyerror!void {
 
         var p = try koino.parser.Parser.init(alloc, .{});
         defer p.deinit();
+
+        // trying to feed 1k chunks or something is not taken well
+        // by the parser.
         try p.feed(file_contents);
 
         var doc = try p.finish();

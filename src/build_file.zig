@@ -23,6 +23,7 @@ pub const BuildFile = struct {
 
     pub fn parse(allocator: std.mem.Allocator, input_data: []const u8) !Self {
         var includes = StringList.init(allocator);
+        errdefer includes.deinit();
         var file_lines_it = std.mem.split(u8, input_data, "\n");
 
         var config = ConfigDirectives{};
@@ -34,10 +35,18 @@ pub const BuildFile = struct {
 
             const directive = std.mem.trim(u8, line[0..first_space_index], "\n");
             const value = line[first_space_index + 1 ..];
-            if (std.mem.eql(u8, "vault", directive)) vault_path = value;
-            if (std.mem.eql(u8, "include", directive)) try includes.append(value);
-            if (std.mem.eql(u8, "index", directive)) config.index = value;
-            if (std.mem.eql(u8, "strict_links", directive)) config.strict_links = parseBool(value);
+            if (std.mem.eql(u8, "vault", directive)) {
+                vault_path = value;
+            } else if (std.mem.eql(u8, "include", directive)) {
+                try includes.append(value);
+            } else if (std.mem.eql(u8, "index", directive)) {
+                config.index = value;
+            } else if (std.mem.eql(u8, "strict_links", directive)) {
+                config.strict_links = parseBool(value);
+            } else {
+                std.log.err("unknown directive '{s}'", .{directive});
+                return error.UnknownDirective;
+            }
         }
 
         return Self{
