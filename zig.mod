@@ -3,23 +3,10 @@ name: obsidian2web
 license: MIT
 description: An HTML renderer for Obsidian vaults
 dev_dependencies:
-  - src: system_lib pcre
-  - name: libpcre
+  - name: funnier-libpcre
     main: src/main.zig
     src: git https://github.com/lun-4/libpcre.zig
-  - src: git https://github.com/kivikakk/koino
+  - src: git https://github.com/lun-4/koino
     name: koino
     main: src/koino.zig
-    dependencies:
-      - name: libpcre
-        main: .zigmod/deps/git/github.com/kivikakk/koino/vendor/libpcre.zig/src/main.zig
-        src: local libpcre
-      - name: htmlentities
-        main: .zigmod/deps/git/github.com/kivikakk/koino/vendor/htmlentities.zig/src/main.zig
-        src: local htmlentities
-      - name: clap
-        main: .zigmod/deps/git/github.com/kivikakk/koino/vendor/zig-clap/clap.zig
-        src: local clap
-      - name: zunicode
-        main: .zigmod/deps/git/github.com/kivikakk/koino/vendor/zunicode/src/zunicode.zig
-        src: local zunicode
+    version: branch-add-zigmod-support

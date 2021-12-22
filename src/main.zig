@@ -1,6 +1,6 @@
 const std = @import("std");
 const koino = @import("koino");
-const libpcre = @import("libpcre");
+const libpcre = @import("funnier-libpcre");
 
 const StringList = std.ArrayList(u8);
 const BuildFile = @import("build_file.zig").BuildFile;
