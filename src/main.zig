@@ -45,6 +45,8 @@ fn deinitPageFolder(folder: *PageFolder) void {
     folder.deinit();
 }
 
+const sepstr = &[_]u8{std.fs.path.sep};
+
 const PageTree = struct {
     allocator: std.mem.Allocator,
     root: PageFolder,
@@ -61,8 +63,8 @@ const PageTree = struct {
         deinitPageFolder(&self.root);
     }
     pub fn addPage(self: *Self, fspath: []const u8) !void {
-        const total_seps = std.mem.count(u8, fspath, &[_]u8{std.fs.path.sep});
-        var path_it = std.mem.split(u8, fspath, &[_]u8{std.fs.path.sep});
+        const total_seps = std.mem.count(u8, fspath, sepstr);
+        var path_it = std.mem.split(u8, fspath, sepstr);
 
         var current_page: ?*PageFolder = &self.root;
         var idx: usize = 0;
@@ -155,20 +157,37 @@ const LinkProcessor = struct {
     }
 };
 
-const Paths = struct { web_path: []const u8, output_path: []const u8, html_path: []const u8 };
+const Paths = struct {
+    /// Path to given page in the web browser
+    web_path: []const u8,
+    /// Path to given page in the public/ folder
+    html_path: []const u8,
+};
 
-pub fn parsePaths(local_path: []const u8, output_path_buffer: []u8, html_path_buffer: []u8) !Paths {
-    var fba = std.heap.FixedBufferAllocator{ .buffer = output_path_buffer, .end_index = 0 };
-    var fixed_alloc = fba.allocator();
-    // TODO have simple mem.join with slashes since its the web lmao
-    const output_path = try std.fs.path.join(fixed_alloc, &[_][]const u8{ "public", local_path });
-    const web_path_raw = local_path[0 .. local_path.len - 3];
+pub fn parsePaths(local_path: []const u8, string_buffer: []u8) !Paths {
+    var fba = std.heap.FixedBufferAllocator{ .buffer = string_buffer, .end_index = 0 };
+    var alloc = fba.allocator();
 
-    const offset = std.mem.replacementSize(u8, output_path, ".md", ".html");
-    _ = std.mem.replace(u8, output_path, ".md", ".html", html_path_buffer);
+    // local_path contains path to markdown file relative to vault_dir
+    //  (so if you want to access it, concatenate vault_dir with local_path)
+    //
+    // to generate web path, we need to replace std.fs.path.sep to '/'
+    //  and also wipe the extension
+    const cutoff_local_path = local_path[0 .. local_path.len - 3];
+    const web_path_raw_size = std.mem.replacementSize(u8, local_path, sepstr, "/");
+    var web_path_raw_buffer = try alloc.alloc(u8, web_path_raw_size);
+    _ = std.mem.replace(u8, cutoff_local_path, sepstr, "/", web_path_raw_buffer);
+    const web_path_raw = web_path_raw_buffer[0..web_path_raw_size];
+
+    // to generate html path, take public/ + local_path, and replace
+    // ".md" with ".html"
+    const html_path_raw = try std.fs.path.join(alloc, &[_][]const u8{ "public", local_path });
+    const offset = std.mem.replacementSize(u8, html_path_raw, ".md", ".html");
+    var html_path_buffer = try alloc.alloc(u8, offset);
+    _ = std.mem.replace(u8, html_path_raw, ".md", ".html", html_path_buffer);
     const html_path = html_path_buffer[0..offset];
 
-    var result = StringList.init(fixed_alloc);
+    var result = StringList.init(alloc);
     defer result.deinit();
 
     for (web_path_raw) |char| {
@@ -186,12 +205,12 @@ pub fn parsePaths(local_path: []const u8, output_path_buffer: []u8, html_path_bu
         }
     }
 
+    // full web_path does not contain the dot .
     const web_path = std.mem.trimLeft(u8, result.toOwnedSlice(), ".");
 
     return Paths{
         .web_path = web_path,
         .html_path = html_path,
-        .output_path = output_path,
     };
 }
 
@@ -260,11 +279,10 @@ pub fn generateToc(
     for (files.items) |file_name| {
         const local_path = folder.get(file_name).?.file;
 
-        var toc_output_path_buffer: [512]u8 = undefined;
-        var toc_html_path_buffer: [2048]u8 = undefined;
-        const toc_paths = try parsePaths(local_path, &toc_output_path_buffer, &toc_html_path_buffer);
+        var toc_path_buffer: [2048]u8 = undefined;
+        const toc_paths = try parsePaths(local_path, &toc_path_buffer);
 
-        const title = std.fs.path.basename(toc_paths.output_path);
+        const title = std.fs.path.basename(toc_paths.html_path);
 
         try result.writer().print(
             "<li><a class=\"toc-link\" href=\"{s}.html\">{s}</a></li>",
@@ -402,9 +420,8 @@ pub fn main() anyerror!void {
         var result = StringList.init(alloc);
         defer result.deinit();
 
-        var output_path_buffer: [512]u8 = undefined;
-        var html_path_buffer: [2048]u8 = undefined;
-        const paths = try parsePaths(local_path, &output_path_buffer, &html_path_buffer);
+        var path_buffer: [2048]u8 = undefined;
+        const paths = try parsePaths(local_path, &path_buffer);
 
         try result.writer().print(
             \\<!DOCTYPE html>
@@ -439,7 +456,7 @@ pub fn main() anyerror!void {
             \\</html>
         );
 
-        const leading_path_to_file = std.fs.path.dirname(paths.output_path).?;
+        const leading_path_to_file = std.fs.path.dirname(paths.html_path).?;
         try std.fs.cwd().makePath(leading_path_to_file);
 
         var output_fd = try std.fs.cwd().createFile(paths.html_path, .{ .read = false, .truncate = true });
@@ -540,10 +557,8 @@ pub fn main() anyerror!void {
 
         if (build_file.config.index) |path_to_index_file| {
             // just copy the html into index.html LOL
-            var output_path_buffer: [512]u8 = undefined;
-            var html_path_buffer: [2048]u8 = undefined;
-
-            const paths = try parsePaths(path_to_index_file, &output_path_buffer, &html_path_buffer);
+            var path_buffer: [2048]u8 = undefined;
+            const paths = try parsePaths(path_to_index_file, &path_buffer);
 
             std.log.info("copying '{s}' to index.html", .{paths.html_path});
             const index_fd = try std.fs.cwd().openFile(paths.html_path, .{ .read = true, .write = false });
