@@ -153,7 +153,7 @@ const LinkProcessor = struct {
         var page_local_path = ctx.titles.get(referenced_title).?;
         var page = ctx.pages.get(page_local_path).?;
 
-        try result.writer().print("<a href=\"{s}.html\">{s}</a>", .{ page.web_path, referenced_title });
+        try result.writer().print("<a href=\"{s}\">{s}</a>", .{ page.web_path, referenced_title });
     }
 };
 
@@ -171,13 +171,6 @@ pub fn parsePaths(local_path: []const u8, string_buffer: []u8) !Paths {
     // local_path contains path to markdown file relative to vault_dir
     //  (so if you want to access it, concatenate vault_dir with local_path)
     //
-    // to generate web path, we need to replace std.fs.path.sep to '/'
-    //  and also wipe the extension
-    const cutoff_local_path = local_path[0 .. local_path.len - 3];
-    const web_path_raw_size = std.mem.replacementSize(u8, local_path, sepstr, "/");
-    var web_path_raw_buffer = try alloc.alloc(u8, web_path_raw_size);
-    _ = std.mem.replace(u8, cutoff_local_path, sepstr, "/", web_path_raw_buffer);
-    const web_path_raw = web_path_raw_buffer[0..web_path_raw_size];
 
     // to generate html path, take public/ + local_path, and replace
     // ".md" with ".html"
@@ -186,6 +179,22 @@ pub fn parsePaths(local_path: []const u8, string_buffer: []u8) !Paths {
     var html_path_buffer = try alloc.alloc(u8, offset);
     _ = std.mem.replace(u8, html_path_raw, ".md", ".html", html_path_buffer);
     const html_path = html_path_buffer[0..offset];
+
+    // to generate web path, we need to:
+    //  - take html_path
+    //  - remove public/
+    //  - replace std.fs.path.sep to '/'
+    //  - done!
+
+    const web_path_r1_size = std.mem.replacementSize(u8, html_path, "public" ++ sepstr, "");
+    var web_path_r1_buffer = try alloc.alloc(u8, web_path_r1_size);
+    _ = std.mem.replace(u8, html_path, "public" ++ sepstr, "", web_path_r1_buffer);
+    const web_path_r1 = web_path_r1_buffer[0..web_path_r1_size];
+
+    const web_path_r2_size = std.mem.replacementSize(u8, web_path_r1, sepstr, "/");
+    var web_path_r2_buffer = try alloc.alloc(u8, web_path_r2_size);
+    _ = std.mem.replace(u8, web_path_r1, sepstr, "/", web_path_r2_buffer);
+    const web_path_raw = web_path_r2_buffer[0..web_path_r2_size];
 
     var result = StringList.init(alloc);
     defer result.deinit();
@@ -285,7 +294,7 @@ pub fn generateToc(
         const title = std.fs.path.basename(toc_paths.html_path);
 
         try result.writer().print(
-            "<li><a class=\"toc-link\" href=\"{s}.html\">{s}</a></li>",
+            "<li><a class=\"toc-link\" href=\"{s}\">{s}</a></li>",
             .{ toc_paths.web_path, title },
         );
     }
