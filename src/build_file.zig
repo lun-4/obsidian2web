@@ -5,6 +5,7 @@ const StringList = std.ArrayList([]const u8);
 pub const ConfigDirectives = struct {
     strict_links: bool = true,
     index: ?[]const u8 = null,
+    webroot: []const u8 = "",
 };
 
 fn parseBool(string: []const u8) bool {
@@ -42,6 +43,8 @@ pub const BuildFile = struct {
                 try includes.append(value);
             } else if (std.mem.eql(u8, "index", directive)) {
                 config.index = value;
+            } else if (std.mem.eql(u8, "webroot", directive)) {
+                config.webroot = value;
             } else if (std.mem.eql(u8, "strict_links", directive)) {
                 config.strict_links = parseBool(value);
             } else {

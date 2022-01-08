@@ -109,6 +109,7 @@ fn addFilePage(
 const StringBuffer = std.ArrayList(u8);
 
 const ProcessorContext = struct {
+    build_file: *const BuildFile,
     titles: *TitleMap,
     pages: *PageMap,
     captures: []?libpcre.Capture,
@@ -153,7 +154,7 @@ const LinkProcessor = struct {
         var page_local_path = ctx.titles.get(referenced_title).?;
         var page = ctx.pages.get(page_local_path).?;
 
-        try result.writer().print("<a href=\"{s}\">{s}</a>", .{ page.web_path, referenced_title });
+        try result.writer().print("<a href=\"{s}/{s}\">{s}</a>", .{ ctx.build_file.config.webroot, page.web_path, referenced_title });
     }
 };
 
@@ -249,6 +250,7 @@ const TocContext = struct {
 /// Operates recursively.
 pub fn generateToc(
     result: *StringList,
+    build_file: *const BuildFile,
     pages: *const PageMap,
     folder: *const PageFolder,
     context: *TocContext,
@@ -283,7 +285,7 @@ pub fn generateToc(
         context.ident += 1;
         defer context.ident -= 1;
 
-        try generateToc(result, pages, &child_folder_entry.value_ptr.*.dir, context);
+        try generateToc(result, build_file, pages, &child_folder_entry.value_ptr.*.dir, context);
     }
     for (files.items) |file_name| {
         const local_path = folder.get(file_name).?.file;
@@ -294,8 +296,8 @@ pub fn generateToc(
         const title = std.fs.path.basename(toc_paths.html_path);
 
         try result.writer().print(
-            "<li><a class=\"toc-link\" href=\"{s}\">{s}</a></li>",
-            .{ toc_paths.web_path, title },
+            "<li><a class=\"toc-link\" href=\"{s}{s}\">{s}</a></li>",
+            .{ build_file.config.webroot, toc_paths.web_path, title },
         );
     }
 
@@ -397,11 +399,13 @@ pub fn main() anyerror!void {
 
     try toc_result.writer().print("<ul id=\"tree-of-contents\">", .{});
     var toc_ctx: TocContext = .{};
-    try generateToc(&toc_result, &pages, &tree.root.getPtr(".").?.dir, &toc_ctx);
+    try generateToc(&toc_result, &build_file, &pages, &tree.root.getPtr(".").?.dir, &toc_ctx);
     try toc_result.writer().print("</ul>", .{});
 
     const toc = toc_result.toOwnedSlice();
     defer alloc.free(toc);
+
+    const webroot = build_file.config.webroot;
 
     // first pass: use koino to parse all that markdown into html
     while (pages_it.next()) |entry| {
@@ -439,12 +443,12 @@ pub fn main() anyerror!void {
             \\    <meta charset="UTF-8">
             \\    <meta name="viewport" content="width=device-width, initial-scale=1.0">
             \\    <title>{s}</title>
-            \\    <script src="/main.js"></script>
-            \\    <link rel="stylesheet" href="/styles.css">
+            \\    <script src="{s}/main.js"></script>
+            \\    <link rel="stylesheet" href="{s}/styles.css">
             \\  </head>
             \\  <body>
             \\  <div class="toc">
-        , .{page.title});
+        , .{ page.title, webroot, webroot });
 
         try result.appendSlice(toc);
 
@@ -532,6 +536,7 @@ pub fn main() anyerror!void {
                     try result.writer().write(file_contents[last_match.?.end..match.start]);
 
                 var ctx = ProcessorContext{
+                    .build_file = &build_file,
                     .titles = &titles,
                     .pages = &pages,
                     .captures = captures,
