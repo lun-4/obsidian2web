@@ -35,6 +35,8 @@ other directives you might add
 
 - `index ./path/to/some/article.md` to set the index page on your build
   - if not provided, a blank page is used
+- `webroot /path/to/web/thing` to set the deployment location on the web
+  - useful if you're deploying to a subfolder of your main domain
 - TODO `strict_links`
 
 build your vault like this
