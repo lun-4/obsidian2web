@@ -346,7 +346,7 @@ pub fn main() anyerror!void {
     var args_it = std.process.args();
     _ = args_it.skip();
     const build_file_path = args_it.next() orelse @panic("want build file path");
-    defer alloc.free(build_file_path);
+    defer args_it.deinit();
 
     const build_file_fd = try std.fs.cwd().openFile(build_file_path, .{ .mode = .read_only });
     defer build_file_fd.close();
