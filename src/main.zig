@@ -313,10 +313,10 @@ pub fn main() anyerror!void {
 
     var args_it = std.process.args();
     _ = args_it.skip();
-    const build_file_path = (try args_it.next(alloc)) orelse @panic("want build file path");
+    const build_file_path = args_it.next() orelse @panic("want build file path");
     defer alloc.free(build_file_path);
 
-    const build_file_fd = try std.fs.cwd().openFile(build_file_path, .{ .read = true, .write = false });
+    const build_file_fd = try std.fs.cwd().openFile(build_file_path, .{ .mode = .read_only });
     defer build_file_fd.close();
 
     var buffer: [8192]u8 = undefined;
@@ -414,7 +414,7 @@ pub fn main() anyerror!void {
         const fspath = entry.value_ptr.*.filesystem_path;
 
         std.log.info("processing '{s}'", .{fspath});
-        var page_fd = try std.fs.cwd().openFile(fspath, .{ .read = true, .write = false });
+        var page_fd = try std.fs.cwd().openFile(fspath, .{ .mode = .read_only });
         defer page_fd.close();
 
         const file_contents = try page_fd.reader().readAllAlloc(alloc, std.math.maxInt(usize));
@@ -503,7 +503,7 @@ pub fn main() anyerror!void {
 
             var file_contents_mut: []const u8 = undefined;
             {
-                var page_fd = try std.fs.cwd().openFile(html_path, .{ .read = true, .write = false });
+                var page_fd = try std.fs.cwd().openFile(html_path, .{ .mode = .read_only });
                 defer page_fd.close();
 
                 file_contents_mut = try page_fd.reader().readAllAlloc(alloc, std.math.maxInt(usize));
@@ -557,7 +557,7 @@ pub fn main() anyerror!void {
             {
                 var page_fd = try std.fs.cwd().openFile(
                     entry.value_ptr.html_path.?,
-                    .{ .read = false, .write = true },
+                    .{ .mode = .write_only },
                 );
                 defer page_fd.close();
 
@@ -575,7 +575,7 @@ pub fn main() anyerror!void {
             const paths = try parsePaths(path_to_index_file, &path_buffer);
 
             std.log.info("copying '{s}' to index.html", .{paths.html_path});
-            const index_fd = try std.fs.cwd().openFile(paths.html_path, .{ .read = true, .write = false });
+            const index_fd = try std.fs.cwd().openFile(paths.html_path, .{ .mode = .read_only });
             defer index_fd.close();
 
             const written_bytes =
