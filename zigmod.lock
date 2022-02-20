@@ -1,6 +1,5 @@
 2
 git https://github.com/lun-4/libpcre.zig commit-96c4b56aff3a01f8b94bd8eccf3ea6d0a6e68de8
-git https://github.com/lun-4/koino commit-3247b0d71ad995540886d067a8a0851c72fc96bc
-git https://github.com/kivikakk/htmlentities.zig commit-311c844
-git https://github.com/kivikakk/zig-clap commit-2acde36
-git https://github.com/kivikakk/zunicode commit-5bf4a3a
+git https://github.com/kivikakk/koino commit-c5dbce2079521490be3ad93c0eb51ea62d24e8d1
+git https://github.com/kivikakk/htmlentities.zig commit-311c844c1d1d1cb968eedfeb76ce911038b1043a
+git https://github.com/kivikakk/zunicode commit-5bf4a3a5f0c6e3d96f6def56957ab7f201851c50
