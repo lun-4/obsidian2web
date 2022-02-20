@@ -305,6 +305,38 @@ pub fn generateToc(
         try result.writer().print("</ul>", .{});
 }
 
+pub const MatchList = std.ArrayList([]?libpcre.Capture);
+
+pub fn captureAll(
+    self: libpcre.Regex,
+    allocator: std.mem.Allocator,
+    full_string: []const u8,
+    options: libpcre.Options,
+) (libpcre.Regex.ExecError || std.mem.Allocator.Error)!MatchList {
+    var offset: usize = 0;
+
+    var match_list = MatchList.init(allocator);
+    errdefer match_list.deinit();
+    while (true) {
+        var maybe_single_capture = try self.captures(allocator, full_string[offset..], options);
+        if (maybe_single_capture) |single_capture| {
+            const first_group = single_capture[0].?;
+            for (single_capture) |maybe_group, idx| {
+                if (maybe_group != null) {
+                    // convert from relative offsets to absolute file offsets
+                    single_capture[idx].?.start += offset;
+                    single_capture[idx].?.end += offset;
+                }
+            }
+            try match_list.append(single_capture);
+            offset += first_group.end;
+        } else {
+            break;
+        }
+    }
+    return match_list;
+}
+
 pub fn main() anyerror!void {
     var allocator_instance = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = allocator_instance.deinit();
@@ -511,7 +543,7 @@ pub fn main() anyerror!void {
             const file_contents = file_contents_mut;
             defer alloc.free(file_contents);
 
-            const matches = try processor.regex.captureAll(alloc, file_contents, .{});
+            const matches = try captureAll(processor.regex, alloc, file_contents, .{});
             defer {
                 for (matches.items) |match| alloc.free(match);
                 matches.deinit();
