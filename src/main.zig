@@ -349,6 +349,12 @@ pub fn captureAll(
     return match_list;
 }
 
+const FOOTER =
+    \\  <div class="footer">
+    \\    made with love with <a href="https://github.com/lun-4/obsidian2web">obsidian2web!</a>
+    \\  </div>
+;
+
 pub fn main() anyerror!void {
     var allocator_instance = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = allocator_instance.deinit();
@@ -509,6 +515,13 @@ pub fn main() anyerror!void {
 
         try result.appendSlice(
             \\  </p></div>
+        );
+
+        if (build_file.config.project_footer) {
+            try result.appendSlice(FOOTER);
+        }
+
+        try result.appendSlice(
             \\  </body>
             \\</html>
         );
@@ -651,10 +664,14 @@ pub fn main() anyerror!void {
             _ = try writer.write(
                 \\  </div>
                 \\  <div class="text">
+                \\  </div>
             );
 
+            if (build_file.config.project_footer) {
+                _ = try writer.write(FOOTER);
+            }
+
             _ = try writer.write(
-                \\  </div>
                 \\  </body>
                 \\</html>
             );

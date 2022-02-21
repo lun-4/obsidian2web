@@ -6,6 +6,7 @@ pub const ConfigDirectives = struct {
     strict_links: bool = true,
     index: ?[]const u8 = null,
     webroot: []const u8 = "",
+    project_footer: bool = false,
 };
 
 fn parseBool(string: []const u8) bool {
@@ -47,6 +48,8 @@ pub const BuildFile = struct {
                 config.webroot = value;
             } else if (std.mem.eql(u8, "strict_links", directive)) {
                 config.strict_links = parseBool(value);
+            } else if (std.mem.eql(u8, "project_footer", directive)) {
+                config.project_footer = parseBool(value);
             } else {
                 std.log.err("unknown directive '{s}'", .{directive});
                 return error.UnknownDirective;
