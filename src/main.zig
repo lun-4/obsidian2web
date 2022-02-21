@@ -350,9 +350,9 @@ pub fn captureAll(
 }
 
 const FOOTER =
-    \\  <div class="footer">
-    \\    made with love with <a href="https://github.com/lun-4/obsidian2web">obsidian2web!</a>
-    \\  </div>
+    \\  <footer>
+    \\    made with love using <a href="https://github.com/lun-4/obsidian2web">obsidian2web!</a>
+    \\  </footer>
 ;
 
 pub fn main() anyerror!void {
