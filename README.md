@@ -39,6 +39,8 @@ other directives you might add
   - useful if you're deploying to a subfolder of your main domain
 - `strict_links yes` or `strict_links no` (default is `yes`)
   - either force all links to exist or let them fail silently (renders as `[[whatever]]` in the output html)
+- `project_footer yes` or `project_footer no` (default is `no`)
+  - add a small reference to obsidian2web on all the page's footers.
 
 build your vault like this
 
