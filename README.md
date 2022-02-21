@@ -37,7 +37,8 @@ other directives you might add
   - if not provided, a blank page is used
 - `webroot /path/to/web/thing` to set the deployment location on the web
   - useful if you're deploying to a subfolder of your main domain
-- TODO `strict_links`
+- `strict_links yes` or `strict_links no` (default is `yes`)
+  - either force all links to exist or let them fail silently (renders as `[[whatever]]` in the output html)
 
 build your vault like this
 
