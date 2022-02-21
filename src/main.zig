@@ -114,6 +114,7 @@ const ProcessorContext = struct {
     pages: *PageMap,
     captures: []?libpcre.Capture,
     file_contents: []const u8,
+    current_html_path: []const u8,
 };
 
 const CheckmarkProcessor = struct {
@@ -151,10 +152,21 @@ const LinkProcessor = struct {
         std.log.info("link to '{s}'", .{referenced_title});
 
         // TODO strict_links support goes here
-        var page_local_path = ctx.titles.get(referenced_title).?;
-        var page = ctx.pages.get(page_local_path).?;
-
-        try result.writer().print("<a href=\"{s}/{s}\">{s}</a>", .{ ctx.build_file.config.webroot, page.web_path, referenced_title });
+        var maybe_page_local_path = ctx.titles.get(referenced_title);
+        if (maybe_page_local_path) |page_local_path| {
+            var page = ctx.pages.get(page_local_path).?;
+            try result.writer().print("<a href=\"{s}/{s}\">{s}</a>", .{ ctx.build_file.config.webroot, page.web_path, referenced_title });
+        } else {
+            if (ctx.build_file.config.strict_links) {
+                std.log.err(
+                    "file '{s}' has link to file '{s}' which is not included!",
+                    .{ ctx.current_html_path, referenced_title },
+                );
+                return error.InvalidLinksFound;
+            } else {
+                try result.writer().print("[[{s}]]", .{referenced_title});
+            }
+        }
     }
 };
 
@@ -573,6 +585,7 @@ pub fn main() anyerror!void {
                     .pages = &pages,
                     .captures = captures,
                     .file_contents = file_contents,
+                    .current_html_path = html_path,
                 };
 
                 try processor.handle(ctx, &result);
