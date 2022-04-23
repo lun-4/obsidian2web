@@ -215,6 +215,7 @@ pub fn parsePaths(local_path: []const u8, string_buffer: []u8) !Paths {
     for (web_path_raw) |char| {
         switch (char) {
             '$' => try result.appendSlice("%24"),
+            '%' => try result.appendSlice("%25"),
             '&' => try result.appendSlice("%26"),
             '+' => try result.appendSlice("%2B"),
             ',' => try result.appendSlice("%2C"),
