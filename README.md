@@ -6,6 +6,8 @@ this idea came to be from using a notion page for a knowledge index and
 seeing absurdly poor performance come out of it. thought i'd make my own to
 get my fingers dirty in zig once again.
 
+you see it in action here: https://l4.pm/vr/lifehax/
+
 # installation
 
 - get a recent master build off https://ziglang.org/download/
