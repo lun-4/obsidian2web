@@ -155,7 +155,7 @@ const LinkProcessor = struct {
         var maybe_page_local_path = ctx.titles.get(referenced_title);
         if (maybe_page_local_path) |page_local_path| {
             var page = ctx.pages.get(page_local_path).?;
-            try result.writer().print("<a href=\"{s}/{s}\">{s}</a>", .{ ctx.build_file.config.webroot, page.web_path, referenced_title });
+            try result.writer().print("<a href=\"{s}/{?s}\">{s}</a>", .{ ctx.build_file.config.webroot, page.web_path, referenced_title });
         } else {
             if (ctx.build_file.config.strict_links) {
                 std.log.err(
@@ -377,7 +377,7 @@ pub fn main() anyerror!void {
     var build_file = try BuildFile.parse(alloc, build_file_data);
     defer build_file.deinit();
 
-    var vault_dir = try std.fs.cwd().openDir(build_file.vault_path, .{ .iterate = true });
+    var vault_dir = try std.fs.cwd().openIterableDir(build_file.vault_path, .{});
     defer vault_dir.close();
 
     var pages = PageMap.init(alloc);
@@ -400,7 +400,7 @@ pub fn main() anyerror!void {
         std.log.info("include path: {s}", .{joined_path});
 
         // attempt to openDir first, if it fails assume file
-        var included_dir = std.fs.cwd().openDir(joined_path, .{ .iterate = true }) catch |err| switch (err) {
+        var included_dir = std.fs.cwd().openIterableDir(joined_path, .{}) catch |err| switch (err) {
             error.NotDir => {
                 const owned_path = try string_arena.dupe(u8, joined_path);
                 try addFilePage(&pages, &titles, &tree, include_path, owned_path);

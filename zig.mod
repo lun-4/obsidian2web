@@ -9,3 +9,7 @@ root_dependencies:
   - src: git https://github.com/kivikakk/koino
     name: koino
     main: src/koino.zig
+    dependencies:
+      - src: git https://github.com/kivikakk/libpcre.zig
+      - src: git https://github.com/kivikakk/htmlentities.zig
+      - src: git https://github.com/kivikakk/zunicode
