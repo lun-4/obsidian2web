@@ -170,6 +170,30 @@ const LinkProcessor = struct {
     }
 };
 
+const WebLinkProcessor = struct {
+    regex: libpcre.Regex,
+
+    const Self = @This();
+
+    pub fn deinit(self: *Self) void {
+        self.regex.deinit();
+    }
+
+    pub fn handle(self: *Self, ctx: ProcessorContext, result: *StringBuffer) !void {
+        _ = self;
+        const full_match = ctx.captures[0].?;
+        const first_character = ctx.file_contents[full_match.start .. full_match.start + 1];
+
+        const match = ctx.captures[1].?;
+
+        std.log.info("link match {} {}", .{ match.start, match.end });
+        const web_link = ctx.file_contents[match.start..match.end];
+        std.log.info("text web link to '{s}' (first char '{s}')", .{ web_link, first_character });
+
+        try result.writer().print("{s}<a href=\"{s}\">{s}</a>", .{ first_character, web_link, web_link });
+    }
+};
+
 const Paths = struct {
     /// Path to given page in the web browser
     web_path: []const u8,
@@ -544,8 +568,15 @@ pub fn main() anyerror!void {
     const check_processor = CheckmarkProcessor{
         .regex = try libpcre.Regex.compile("\\[.\\]", .{}),
     };
+    const web_link_processor = WebLinkProcessor{
+        .regex = try libpcre.Regex.compile("[> ](https?:\\/\\/[a-zA-Z0-9\\./\\-#]+)", .{}),
+    };
 
-    const processors = .{ link_processor, check_processor };
+    const processors = .{
+        link_processor,
+        check_processor,
+        web_link_processor,
+    };
 
     comptime var i = 0;
     inline while (i < processors.len) : (i += 1) {
