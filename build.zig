@@ -7,14 +7,15 @@ pub fn build(b: *std.build.Builder) void {
     // means any target is allowed, and the default is native. Other options
     // for restricting supported target set are available.
     const target = b.standardTargetOptions(.{});
+    const optimize = b.standardOptimizeOption(.{});
 
-    // Standard release options allow the person running `zig build` to select
-    // between Debug, ReleaseSafe, ReleaseFast, and ReleaseSmall.
-    const mode = b.standardReleaseOptions();
+    const exe = b.addExecutable(.{
+        .name = "obsidian2web",
+        .root_source_file = .{ .path = "src/main.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
 
-    const exe = b.addExecutable("obsidian2web", "src/main.zig");
-    exe.setTarget(target);
-    exe.setBuildMode(mode);
     deps.addAllTo(exe);
     exe.install();
 
@@ -27,9 +28,11 @@ pub fn build(b: *std.build.Builder) void {
     const run_step = b.step("run", "Run the app");
     run_step.dependOn(&run_cmd.step);
 
-    const exe_tests = b.addTest("src/main.zig");
+    const exe_tests = b.addTest(.{
+        .root_source_file = .{ .path = "src/main.zig" },
+        .optimize = optimize,
+    });
     deps.addAllTo(exe_tests);
-    exe_tests.setBuildMode(mode);
 
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&exe_tests.step);
