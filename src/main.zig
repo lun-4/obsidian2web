@@ -253,7 +253,7 @@ pub fn parsePaths(local_path: []const u8, string_buffer: []u8) !Paths {
     }
 
     // full web_path does not contain the dot .
-    const web_path = std.mem.trimLeft(u8, result.toOwnedSlice(), ".");
+    const web_path = std.mem.trimLeft(u8, try result.toOwnedSlice(), ".");
 
     return Paths{
         .web_path = web_path,
@@ -477,7 +477,7 @@ pub fn main() anyerror!void {
     try generateToc(&toc_result, &build_file, &pages, &tree.root.getPtr(".").?.dir, &toc_ctx);
     try toc_result.writer().print("</ul>", .{});
 
-    const toc = toc_result.toOwnedSlice();
+    const toc = try toc_result.toOwnedSlice();
     defer alloc.free(toc);
 
     const webroot = build_file.config.webroot;
