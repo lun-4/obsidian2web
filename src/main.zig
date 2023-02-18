@@ -569,7 +569,7 @@ pub fn main() anyerror!void {
         .regex = try libpcre.Regex.compile("\\[.\\]", .{}),
     };
     const web_link_processor = WebLinkProcessor{
-        .regex = try libpcre.Regex.compile("[> ](https?:\\/\\/[a-zA-Z0-9\\./\\-#]+)", .{}),
+        .regex = try libpcre.Regex.compile("[> ](https?:\\/\\/[a-zA-Z0-9\\./\\-#\\?=]+)", .{}),
     };
 
     const processors = .{
