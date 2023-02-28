@@ -314,7 +314,7 @@ pub fn generateToc(
 
     // draw folders first (by recursing), then draw files second!
     if (context.ident > 0)
-        try result.writer().print("<ul class=\"nested\">", .{});
+        try result.writer().print("<ul class=\"nested\">\n", .{});
     for (folders.items) |folder_name| {
         const child_folder_entry = folder.getEntry(folder_name).?;
         try result.writer().print("<li><span class=\"caret\">{s}</span>", .{folder_name});
@@ -333,13 +333,13 @@ pub fn generateToc(
         const title = std.fs.path.basename(toc_paths.html_path);
 
         try result.writer().print(
-            "<li><a class=\"toc-link\" href=\"{s}{s}\">{s}</a></li>",
+            "<li><a class=\"toc-link\" href=\"{s}{s}\">{s}</a></li>\n",
             .{ build_file.config.webroot, toc_paths.web_path, title },
         );
     }
 
     if (context.ident > 0)
-        try result.writer().print("</ul>", .{});
+        try result.writer().print("</ul>\n", .{});
 }
 
 pub const MatchList = std.ArrayList([]?libpcre.Capture);
@@ -358,7 +358,7 @@ pub fn captureAll(
         var maybe_single_capture = try self.captures(allocator, full_string[offset..], options);
         if (maybe_single_capture) |single_capture| {
             const first_group = single_capture[0].?;
-            for (single_capture) |maybe_group, idx| {
+            for (single_capture, 0..) |maybe_group, idx| {
                 if (maybe_group != null) {
                     // convert from relative offsets to absolute file offsets
                     single_capture[idx].?.start += offset;
