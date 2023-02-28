@@ -26,18 +26,29 @@ code {
 
 /* split toc and text */
 
-div.toc,
-div.text {
-  display: inline-block;
-  zoom: 1;
-  vertical-align: top;
+body {
+  display: flex;
+  flex-flow: row wrap;
 }
 
-div.toc {
-  width: 20%;
+main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
 }
-div.text {
-  width: 70%;
+
+footer {
+  flex: 0 0 100%;
+}
+
+.toc {
+  flex: 1 0 20%;
+  padding-right: 1rem;
+}
+
+.text {
+  flex: 1 1 70%;
+  padding-right: 1.5rem;
 }
 
 /* <a> links still live in a dark background, so fix that */
