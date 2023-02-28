@@ -313,16 +313,21 @@ pub fn generateToc(
     std.sort.sort([]const u8, files.items, {}, lexicographicalCompare);
 
     // draw folders first (by recursing), then draw files second!
-    if (context.ident > 0)
-        try result.writer().print("<ul class=\"nested\">\n", .{});
+    var writer = result.writer();
     for (folders.items) |folder_name| {
+        if (context.ident > 0)
+            try writer.print("<details>\n", .{});
+
         const child_folder_entry = folder.getEntry(folder_name).?;
-        try result.writer().print("<li><span class=\"caret\">{s}</span>", .{folder_name});
+        try result.writer().print("<summary>{s}</summary>\n", .{folder_name});
 
         context.ident += 1;
         defer context.ident -= 1;
 
         try generateToc(result, build_file, pages, &child_folder_entry.value_ptr.*.dir, context);
+
+        if (context.ident > 0)
+            try result.writer().print("</details>\n", .{});
     }
     for (files.items) |file_name| {
         const local_path = folder.get(file_name).?.file;
@@ -337,9 +342,6 @@ pub fn generateToc(
             .{ build_file.config.webroot, toc_paths.web_path, title },
         );
     }
-
-    if (context.ident > 0)
-        try result.writer().print("</ul>\n", .{});
 }
 
 pub const MatchList = std.ArrayList([]?libpcre.Capture);
@@ -472,10 +474,10 @@ pub fn main() anyerror!void {
     var toc_result = StringList.init(alloc);
     defer toc_result.deinit();
 
-    try toc_result.writer().print("<ul id=\"tree-of-contents\">", .{});
+    try toc_result.writer().print("<details>\n", .{});
     var toc_ctx: TocContext = .{};
     try generateToc(&toc_result, &build_file, &pages, &tree.root.getPtr(".").?.dir, &toc_ctx);
-    try toc_result.writer().print("</ul>", .{});
+    try toc_result.writer().print("</details>\n", .{});
 
     const toc = try toc_result.toOwnedSlice();
     defer alloc.free(toc);

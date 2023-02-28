@@ -1,33 +1,43 @@
 const treeMap = {};
 
-function registerTreeToggles() {
-  const toggler = document.getElementsByClassName("caret");
-  for (const element of toggler) {
-    treeMap[element.innerText] = element;
-    element.addEventListener("click", function () {
-      this.parentElement.querySelector(".nested").classList.toggle("active");
-      this.classList.toggle("caret-down");
-    });
+function createTreeMap() {
+  const tocLinks = document.getElementsByClassName("toc-link");
+  for (const element of tocLinks) {
+    const hrefUrl = new URL(element.href);
+    treeMap[hrefUrl.pathname] = element;
   }
+}
+
+// Made with the following request to ChatGPT AS A SHITPOST:
+// "Generate JavaScript code that, given a DOM element,
+//  finds all parent elements that match a certain CSS selector."
+
+function findMatchingParents(element, selector) {
+  const matchingParents = [];
+  let parent = element.parentElement;
+
+  while (parent !== null) {
+    if (parent.matches(selector)) {
+      matchingParents.push(parent);
+    }
+    parent = parent.parentElement;
+  }
+
+  return matchingParents;
 }
 
 // Based on document.location, open the necessary tree buttons
 function openTreeFromPath() {
-  const path = decodeURIComponent(window.location.pathname);
-  for (let raw_component of path.split("/")) {
-    if (!raw_component) continue;
-    if (raw_component.endsWith(".html")) {
-      raw_component = raw_component.slice(0, -5);
-    }
-    const component = raw_component;
-    const element = treeMap[component];
-    if (!element) continue;
-    element.parentElement.querySelector(".nested").classList.toggle("active");
-    element.classList.toggle("caret-down");
+  const element = treeMap[window.location.pathname];
+  if (!element) return;
+  let allParents = findMatchingParents(element, "details");
+
+  for (let parentDetails of allParents) {
+    parentDetails.open = true;
   }
 }
 
 window.onload = function () {
-  registerTreeToggles();
+  createTreeMap();
   openTreeFromPath();
 };
