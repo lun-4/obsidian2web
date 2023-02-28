@@ -8,6 +8,9 @@ get my fingers dirty in zig once again.
 
 you see it in action here: https://l4.pm/vr/lifehax/
 
+(note, do not name any folder inside your vault `public/`, it will break links,
+i learned this the hard way. one day i'll fix it.)
+
 # installation
 
 - get a recent master build off https://ziglang.org/download/
