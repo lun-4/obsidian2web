@@ -246,9 +246,19 @@ pub fn parsePaths(local_path: []const u8, string_buffer: []u8) !Paths {
     for (web_path_raw) |char| {
         switch (char) {
             // safe characters
-            '0'...'9', 'A'...'Z', 'a'...'z', '-', '.', '_', '~', std.fs.path.sep => try result.append(char),
+            '0'...'9',
+            'A'...'Z',
+            'a'...'z',
+            '-',
+            '.',
+            '_',
+            '~',
+            std.fs.path.sep,
+            => try result.append(char),
             // encode everything else with percent encoding
-            else => try result.appendSlice(&[_]u8{ '%', to_hex_digit(char >> 4), to_hex_digit(char & 15) }),
+            else => try result.appendSlice(
+                &[_]u8{ '%', to_hex_digit(char >> 4), to_hex_digit(char & 15) },
+            ),
         }
     }
 
