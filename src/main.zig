@@ -201,6 +201,13 @@ const Paths = struct {
     html_path: []const u8,
 };
 
+fn to_hex_digit(digit: u8) u8 {
+    return switch (digit) {
+        0...9 => '0' + digit,
+        10...255 => 'A' - 10 + digit,
+    };
+}
+
 pub fn parsePaths(local_path: []const u8, string_buffer: []u8) !Paths {
     var fba = std.heap.FixedBufferAllocator{ .buffer = string_buffer, .end_index = 0 };
     var alloc = fba.allocator();
@@ -238,17 +245,20 @@ pub fn parsePaths(local_path: []const u8, string_buffer: []u8) !Paths {
 
     for (web_path_raw) |char| {
         switch (char) {
-            '$' => try result.appendSlice("%24"),
-            '%' => try result.appendSlice("%25"),
-            '&' => try result.appendSlice("%26"),
-            '+' => try result.appendSlice("%2B"),
-            ',' => try result.appendSlice("%2C"),
-            ':' => try result.appendSlice("%3A"),
-            ';' => try result.appendSlice("%3B"),
-            '=' => try result.appendSlice("%3D"),
-            '?' => try result.appendSlice("%3F"),
-            '@' => try result.appendSlice("%40"),
-            else => try result.append(char),
+            // safe characters
+            '0'...'9',
+            'A'...'Z',
+            'a'...'z',
+            '-',
+            '.',
+            '_',
+            '~',
+            std.fs.path.sep,
+            => try result.append(char),
+            // encode everything else with percent encoding
+            else => try result.appendSlice(
+                &[_]u8{ '%', to_hex_digit(char >> 4), to_hex_digit(char & 15) },
+            ),
         }
     }
 
