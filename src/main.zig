@@ -108,6 +108,24 @@ fn addFilePage(
 }
 const StringBuffer = std.ArrayList(u8);
 
+fn encodeForHTML(in: []const u8) error{OutOfMemory}![]const u8 {
+    var result = StringList.init(std.heap.page_allocator);
+    defer result.deinit();
+
+    for (in) |char| {
+        switch (char) {
+            '&' => try result.appendSlice("&amp;"),
+            '<' => try result.appendSlice("&lt;"),
+            '>' => try result.appendSlice("&gt;"),
+            '"' => try result.appendSlice("&quot;"),
+            '\'' => try result.appendSlice("&#x27;"),
+            else => try result.append(char),
+        }
+    }
+
+    return try result.toOwnedSlice();
+}
+
 const ProcessorContext = struct {
     build_file: *const BuildFile,
     titles: *TitleMap,
@@ -155,7 +173,14 @@ const LinkProcessor = struct {
         var maybe_page_local_path = ctx.titles.get(referenced_title);
         if (maybe_page_local_path) |page_local_path| {
             var page = ctx.pages.get(page_local_path).?;
-            try result.writer().print("<a href=\"{s}/{?s}\">{s}</a>", .{ ctx.build_file.config.webroot, page.web_path, referenced_title });
+            try result.writer().print(
+                "<a href=\"{s}/{?s}\">{s}</a>",
+                .{
+                    ctx.build_file.config.webroot,
+                    page.web_path,
+                    try encodeForHTML(referenced_title),
+                },
+            );
         } else {
             if (ctx.build_file.config.strict_links) {
                 std.log.err(
@@ -190,7 +215,10 @@ const WebLinkProcessor = struct {
         const web_link = ctx.file_contents[match.start..match.end];
         std.log.info("text web link to '{s}' (first char '{s}')", .{ web_link, first_character });
 
-        try result.writer().print("{s}<a href=\"{s}\">{s}</a>", .{ first_character, web_link, web_link });
+        try result.writer().print(
+            "{s}<a href=\"{s}\">{s}</a>",
+            .{ first_character, web_link, try encodeForHTML(web_link) },
+        );
     }
 };
 
@@ -319,7 +347,10 @@ pub fn generateToc(
             try writer.print("<details>\n", .{});
 
         const child_folder_entry = folder.getEntry(folder_name).?;
-        try result.writer().print("<summary>{s}</summary>\n", .{folder_name});
+        try result.writer().print(
+            "<summary>{s}</summary>\n",
+            .{try encodeForHTML(folder_name)},
+        );
 
         context.ident += 1;
         defer context.ident -= 1;
@@ -339,7 +370,11 @@ pub fn generateToc(
 
         try result.writer().print(
             "<li><a class=\"toc-link\" href=\"{s}{s}\">{s}</a></li>\n",
-            .{ build_file.config.webroot, toc_paths.web_path, title },
+            .{
+                build_file.config.webroot,
+                try encodeForHTML(toc_paths.web_path),
+                try encodeForHTML(title),
+            },
         );
     }
 }
@@ -525,7 +560,7 @@ pub fn main() anyerror!void {
             \\  </head>
             \\  <body>
             \\  <div class="toc">
-        , .{ page.title, webroot, webroot });
+        , .{ try encodeForHTML(page.title), webroot, webroot });
 
         try result.appendSlice(toc);
 
@@ -536,7 +571,7 @@ pub fn main() anyerror!void {
 
         try result.writer().print(
             \\  <h2>{s}</h2><p>
-        , .{page.title});
+        , .{try encodeForHTML(page.title)});
 
         try koino.html.print(result.writer(), alloc, .{ .render = .{ .hard_breaks = true } }, doc);
 
