@@ -108,6 +108,24 @@ fn addFilePage(
 }
 const StringBuffer = std.ArrayList(u8);
 
+fn encodeForHTML(allocator: std.mem.Allocator, in: []const u8) ![]const u8 {
+    var result = StringList.init(allocator);
+    defer result.deinit();
+
+    for (in) |char| {
+        switch (char) {
+            '&' => try result.appendSlice("&amp;"),
+            '<' => try result.appendSlice("&lt;"),
+            '>' => try result.appendSlice("&gt;"),
+            '"' => try result.appendSlice("&quot;"),
+            '\'' => try result.appendSlice("&#x27;"),
+            else => try result.append(char),
+        }
+    }
+
+    return try result.toOwnedSlice();
+}
+
 const ProcessorContext = struct {
     build_file: *const BuildFile,
     titles: *TitleMap,
@@ -155,7 +173,16 @@ const LinkProcessor = struct {
         var maybe_page_local_path = ctx.titles.get(referenced_title);
         if (maybe_page_local_path) |page_local_path| {
             var page = ctx.pages.get(page_local_path).?;
-            try result.writer().print("<a href=\"{s}/{?s}\">{s}</a>", .{ ctx.build_file.config.webroot, page.web_path, referenced_title });
+            const safe_referenced_title = try encodeForHTML(result.allocator, referenced_title);
+            defer result.allocator.free(safe_referenced_title);
+            try result.writer().print(
+                "<a href=\"{s}/{?s}\">{s}</a>",
+                .{
+                    ctx.build_file.config.webroot,
+                    page.web_path,
+                    safe_referenced_title,
+                },
+            );
         } else {
             if (ctx.build_file.config.strict_links) {
                 std.log.err(
@@ -190,7 +217,12 @@ const WebLinkProcessor = struct {
         const web_link = ctx.file_contents[match.start..match.end];
         std.log.info("text web link to '{s}' (first char '{s}')", .{ web_link, first_character });
 
-        try result.writer().print("{s}<a href=\"{s}\">{s}</a>", .{ first_character, web_link, web_link });
+        const safe_web_link = try encodeForHTML(result.allocator, web_link);
+        defer result.allocator.free(safe_web_link);
+        try result.writer().print(
+            "{s}<a href=\"{s}\">{s}</a>",
+            .{ first_character, web_link, safe_web_link },
+        );
     }
 };
 
@@ -329,7 +361,12 @@ pub fn generateToc(
         try writer.print("<details>", .{});
 
         const child_folder_entry = folder.getEntry(folder_name).?;
-        try result.writer().print("<summary>{s}</summary>\n", .{folder_name});
+        const safe_folder_name = try encodeForHTML(result.allocator, folder_name);
+        defer result.allocator.free(safe_folder_name);
+        try result.writer().print(
+            "<summary>{s}</summary>\n",
+            .{safe_folder_name},
+        );
 
         context.ident += 1;
         defer context.ident -= 1;
@@ -348,6 +385,11 @@ pub fn generateToc(
 
         const title = std.fs.path.basename(toc_paths.html_path);
 
+        const safe_web_path = try encodeForHTML(result.allocator, toc_paths.web_path);
+        defer result.allocator.free(safe_web_path);
+        const safe_title = try encodeForHTML(result.allocator, title);
+        defer result.allocator.free(safe_title);
+
         const current_attr = if (current_page_path != null and std.mem.eql(u8, current_page_path.?, toc_paths.web_path))
             "aria-current=\"page\" "
         else
@@ -355,7 +397,7 @@ pub fn generateToc(
 
         try result.writer().print(
             "<li><a class=\"toc-link\" {s}href=\"{s}{s}\">{s}</a></li>\n",
-            .{ current_attr, build_file.config.webroot, toc_paths.web_path, title },
+            .{ current_attr, build_file.config.webroot, safe_web_path, safe_title },
         );
     }
     try result.writer().print("</ul>\n", .{});
@@ -538,6 +580,8 @@ pub fn main() anyerror!void {
         var path_buffer: [2048]u8 = undefined;
         const paths = try parsePaths(local_path, &path_buffer);
 
+        const safe_title = try encodeForHTML(alloc, page.title);
+        defer alloc.free(safe_title);
         try result.writer().print(
             \\<!DOCTYPE html>
             \\<html lang="en">
@@ -550,7 +594,7 @@ pub fn main() anyerror!void {
             \\  </head>
             \\  <body>
             \\  <nav class="toc">
-        , .{ page.title, webroot, webroot });
+        , .{ safe_title, webroot, webroot });
 
         const pageToc = try tocForPage(&build_file, &pages, &tree, paths.web_path);
         defer alloc.free(pageToc);
@@ -564,7 +608,7 @@ pub fn main() anyerror!void {
 
         try result.writer().print(
             \\  <h2>{s}</h2><p>
-        , .{page.title});
+        , .{safe_title});
 
         try koino.html.print(result.writer(), alloc, .{ .render = .{ .hard_breaks = true } }, doc);
 
