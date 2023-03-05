@@ -301,6 +301,7 @@ pub fn generateToc(
     pages: *const PageMap,
     folder: *const PageFolder,
     context: *TocContext,
+    current_page_path: ?[]const u8,
 ) error{OutOfMemory}!void {
     var folder_iterator = folder.iterator();
 
@@ -333,7 +334,7 @@ pub fn generateToc(
         context.ident += 1;
         defer context.ident -= 1;
 
-        try generateToc(result, build_file, pages, &child_folder_entry.value_ptr.*.dir, context);
+        try generateToc(result, build_file, pages, &child_folder_entry.value_ptr.*.dir, context, current_page_path);
 
         try result.writer().print("</details>\n", .{});
     }
@@ -347,9 +348,14 @@ pub fn generateToc(
 
         const title = std.fs.path.basename(toc_paths.html_path);
 
+        const current_attr = if (current_page_path != null and std.mem.eql(u8, current_page_path.?, toc_paths.web_path))
+            "aria-current=\"page\" "
+        else
+            " ";
+
         try result.writer().print(
-            "<li><a class=\"toc-link\" href=\"{s}{s}\">{s}</a></li>\n",
-            .{ build_file.config.webroot, toc_paths.web_path, title },
+            "<li><a class=\"toc-link\" {s}href=\"{s}{s}\">{s}</a></li>\n",
+            .{ current_attr, build_file.config.webroot, toc_paths.web_path, title },
         );
     }
     try result.writer().print("</ul>\n", .{});
@@ -392,6 +398,16 @@ const FOOTER =
     \\    made with love using <a href="https://github.com/lun-4/obsidian2web">obsidian2web!</a>
     \\  </footer>
 ;
+
+fn tocForPage(build_file: *BuildFile, pages: *PageMap, tree: *PageTree, current_page: []const u8) ![]const u8 {
+    var toc_result = StringList.init(build_file.allocator);
+    defer toc_result.deinit();
+
+    var toc_ctx: TocContext = .{};
+    try generateToc(&toc_result, build_file, pages, &tree.root.getPtr(".").?.dir, &toc_ctx, current_page);
+
+    return try toc_result.toOwnedSlice();
+}
 
 pub fn main() anyerror!void {
     var allocator_instance = std.heap.GeneralPurposeAllocator(.{}){};
@@ -486,7 +502,7 @@ pub fn main() anyerror!void {
     defer toc_result.deinit();
 
     var toc_ctx: TocContext = .{};
-    try generateToc(&toc_result, &build_file, &pages, &tree.root.getPtr(".").?.dir, &toc_ctx);
+    try generateToc(&toc_result, &build_file, &pages, &tree.root.getPtr(".").?.dir, &toc_ctx, null);
 
     const toc = try toc_result.toOwnedSlice();
     defer alloc.free(toc);
@@ -536,7 +552,10 @@ pub fn main() anyerror!void {
             \\  <nav class="toc">
         , .{ page.title, webroot, webroot });
 
-        try result.appendSlice(toc);
+        const pageToc = try tocForPage(&build_file, &pages, &tree, paths.web_path);
+        defer alloc.free(pageToc);
+
+        try result.appendSlice(pageToc);
 
         try result.appendSlice(
             \\  </nav>
