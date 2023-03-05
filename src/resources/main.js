@@ -1,18 +1,18 @@
-const treeMap = {};
+// @ts-check
 
-function createTreeMap() {
-  const tocLinks = document.getElementsByClassName("toc-link");
-  for (const element of tocLinks) {
-    const hrefUrl = new URL(element.href);
-    treeMap[hrefUrl.pathname] = element;
-  }
-}
-
-// Made with the following request to ChatGPT AS A SHITPOST:
-// "Generate JavaScript code that, given a DOM element,
-//  finds all parent elements that match a certain CSS selector."
-
+/**
+ * Made with the following request to ChatGPT AS A SHITPOST:
+ * > "Generate JavaScript code that, given a DOM element,
+ * > finds all parent elements that match a certain CSS selector."
+ *
+ * Type annotation added manually.
+ *
+ * @param {Element} element the element to begin looking from
+ * @param {string} selector the selector to match parent elements against
+ * @returns {Element[]}
+ */
 function findMatchingParents(element, selector) {
+  /** @type {Element[]} */
   const matchingParents = [];
   let parent = element.parentElement;
 
@@ -28,9 +28,11 @@ function findMatchingParents(element, selector) {
 
 // Based on document.location, open the necessary tree buttons
 function openTreeFromPath() {
-  const element = treeMap[window.location.pathname];
+  const element = document.querySelector("nav a[aria-current=page]");
   if (!element) return;
-  let allParents = findMatchingParents(element, "details");
+  let allParents = /** @type {HTMLDetailsElement[]} */ (
+    findMatchingParents(element, "details")
+  );
 
   for (let parentDetails of allParents) {
     parentDetails.open = true;
@@ -38,6 +40,5 @@ function openTreeFromPath() {
 }
 
 window.onload = function () {
-  createTreeMap();
   openTreeFromPath();
 };
