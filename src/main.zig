@@ -301,6 +301,7 @@ pub fn generateToc(
     pages: *const PageMap,
     folder: *const PageFolder,
     context: *TocContext,
+    current_page_path: ?[]const u8,
 ) error{OutOfMemory}!void {
     var folder_iterator = folder.iterator();
 
@@ -325,8 +326,7 @@ pub fn generateToc(
     // draw folders first (by recursing), then draw files second!
     var writer = result.writer();
     for (folders.items) |folder_name| {
-        if (context.ident > 0)
-            try writer.print("<details>\n", .{});
+        try writer.print("<details>", .{});
 
         const child_folder_entry = folder.getEntry(folder_name).?;
         try result.writer().print("<summary>{s}</summary>\n", .{folder_name});
@@ -334,11 +334,12 @@ pub fn generateToc(
         context.ident += 1;
         defer context.ident -= 1;
 
-        try generateToc(result, build_file, pages, &child_folder_entry.value_ptr.*.dir, context);
+        try generateToc(result, build_file, pages, &child_folder_entry.value_ptr.*.dir, context, current_page_path);
 
-        if (context.ident > 0)
-            try result.writer().print("</details>\n", .{});
+        try result.writer().print("</details>\n", .{});
     }
+
+    try writer.print("<ul>", .{});
     for (files.items) |file_name| {
         const local_path = folder.get(file_name).?.file;
 
@@ -347,11 +348,17 @@ pub fn generateToc(
 
         const title = std.fs.path.basename(toc_paths.html_path);
 
+        const current_attr = if (current_page_path != null and std.mem.eql(u8, current_page_path.?, toc_paths.web_path))
+            "aria-current=\"page\" "
+        else
+            " ";
+
         try result.writer().print(
-            "<li><a class=\"toc-link\" href=\"{s}{s}\">{s}</a></li>\n",
-            .{ build_file.config.webroot, toc_paths.web_path, title },
+            "<li><a class=\"toc-link\" {s}href=\"{s}{s}\">{s}</a></li>\n",
+            .{ current_attr, build_file.config.webroot, toc_paths.web_path, title },
         );
     }
+    try result.writer().print("</ul>\n", .{});
 }
 
 pub const MatchList = std.ArrayList([]?libpcre.Capture);
@@ -391,6 +398,16 @@ const FOOTER =
     \\    made with love using <a href="https://github.com/lun-4/obsidian2web">obsidian2web!</a>
     \\  </footer>
 ;
+
+fn tocForPage(build_file: *BuildFile, pages: *PageMap, tree: *PageTree, current_page: []const u8) ![]const u8 {
+    var toc_result = StringList.init(build_file.allocator);
+    defer toc_result.deinit();
+
+    var toc_ctx: TocContext = .{};
+    try generateToc(&toc_result, build_file, pages, &tree.root.getPtr(".").?.dir, &toc_ctx, current_page);
+
+    return try toc_result.toOwnedSlice();
+}
 
 pub fn main() anyerror!void {
     var allocator_instance = std.heap.GeneralPurposeAllocator(.{}){};
@@ -484,10 +501,8 @@ pub fn main() anyerror!void {
     var toc_result = StringList.init(alloc);
     defer toc_result.deinit();
 
-    try toc_result.writer().print("<details>\n", .{});
     var toc_ctx: TocContext = .{};
-    try generateToc(&toc_result, &build_file, &pages, &tree.root.getPtr(".").?.dir, &toc_ctx);
-    try toc_result.writer().print("</details>\n", .{});
+    try generateToc(&toc_result, &build_file, &pages, &tree.root.getPtr(".").?.dir, &toc_ctx, null);
 
     const toc = try toc_result.toOwnedSlice();
     defer alloc.free(toc);
@@ -534,14 +549,17 @@ pub fn main() anyerror!void {
             \\    <link rel="stylesheet" href="{s}/styles.css">
             \\  </head>
             \\  <body>
-            \\  <div class="toc">
+            \\  <nav class="toc">
         , .{ page.title, webroot, webroot });
 
-        try result.appendSlice(toc);
+        const pageToc = try tocForPage(&build_file, &pages, &tree, paths.web_path);
+        defer alloc.free(pageToc);
+
+        try result.appendSlice(pageToc);
 
         try result.appendSlice(
-            \\  </div>
-            \\  <div class="text">
+            \\  </nav>
+            \\  <main class="text">
         );
 
         try result.writer().print(
@@ -551,7 +569,7 @@ pub fn main() anyerror!void {
         try koino.html.print(result.writer(), alloc, .{ .render = .{ .hard_breaks = true } }, doc);
 
         try result.appendSlice(
-            \\  </p></div>
+            \\  </p></main>
         );
 
         if (build_file.config.project_footer) {
@@ -700,15 +718,15 @@ pub fn main() anyerror!void {
                 \\    <link rel="stylesheet" href="/styles.css">
                 \\  </head>
                 \\  <body>
-                \\  <div class="toc">
+                \\  <nav class="toc">
             , .{"Index Page"});
 
             _ = try writer.write(toc);
 
             _ = try writer.write(
-                \\  </div>
-                \\  <div class="text">
-                \\  </div>
+                \\  </nav>
+                \\  <main class="text">
+                \\  </main>
             );
 
             if (build_file.config.project_footer) {
