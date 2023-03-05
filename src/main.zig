@@ -325,8 +325,7 @@ pub fn generateToc(
     // draw folders first (by recursing), then draw files second!
     var writer = result.writer();
     for (folders.items) |folder_name| {
-        if (context.ident > 0)
-            try writer.print("<details>\n", .{});
+        try writer.print("<details>", .{});
 
         const child_folder_entry = folder.getEntry(folder_name).?;
         try result.writer().print("<summary>{s}</summary>\n", .{folder_name});
@@ -336,9 +335,10 @@ pub fn generateToc(
 
         try generateToc(result, build_file, pages, &child_folder_entry.value_ptr.*.dir, context);
 
-        if (context.ident > 0)
-            try result.writer().print("</details>\n", .{});
+        try result.writer().print("</details>\n", .{});
     }
+
+    try writer.print("<ul>", .{});
     for (files.items) |file_name| {
         const local_path = folder.get(file_name).?.file;
 
@@ -352,6 +352,7 @@ pub fn generateToc(
             .{ build_file.config.webroot, toc_paths.web_path, title },
         );
     }
+    try result.writer().print("</ul>\n", .{});
 }
 
 pub const MatchList = std.ArrayList([]?libpcre.Capture);
@@ -484,10 +485,8 @@ pub fn main() anyerror!void {
     var toc_result = StringList.init(alloc);
     defer toc_result.deinit();
 
-    try toc_result.writer().print("<details>\n", .{});
     var toc_ctx: TocContext = .{};
     try generateToc(&toc_result, &build_file, &pages, &tree.root.getPtr(".").?.dir, &toc_ctx);
-    try toc_result.writer().print("</details>\n", .{});
 
     const toc = try toc_result.toOwnedSlice();
     defer alloc.free(toc);
@@ -534,14 +533,14 @@ pub fn main() anyerror!void {
             \\    <link rel="stylesheet" href="{s}/styles.css">
             \\  </head>
             \\  <body>
-            \\  <div class="toc">
+            \\  <nav class="toc">
         , .{ page.title, webroot, webroot });
 
         try result.appendSlice(toc);
 
         try result.appendSlice(
-            \\  </div>
-            \\  <div class="text">
+            \\  </nav>
+            \\  <main class="text">
         );
 
         try result.writer().print(
@@ -551,7 +550,7 @@ pub fn main() anyerror!void {
         try koino.html.print(result.writer(), alloc, .{ .render = .{ .hard_breaks = true } }, doc);
 
         try result.appendSlice(
-            \\  </p></div>
+            \\  </p></main>
         );
 
         if (build_file.config.project_footer) {
@@ -700,15 +699,15 @@ pub fn main() anyerror!void {
                 \\    <link rel="stylesheet" href="/styles.css">
                 \\  </head>
                 \\  <body>
-                \\  <div class="toc">
+                \\  <nav class="toc">
             , .{"Index Page"});
 
             _ = try writer.write(toc);
 
             _ = try writer.write(
-                \\  </div>
-                \\  <div class="text">
-                \\  </div>
+                \\  </nav>
+                \\  <main class="text">
+                \\  </main>
             );
 
             if (build_file.config.project_footer) {

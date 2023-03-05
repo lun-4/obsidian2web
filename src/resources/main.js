@@ -35,6 +35,7 @@ function openTreeFromPath() {
   for (let parentDetails of allParents) {
     parentDetails.open = true;
   }
+  element.ariaCurrent = "page";
 }
 
 window.onload = function () {
