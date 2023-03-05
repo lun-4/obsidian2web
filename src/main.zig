@@ -169,7 +169,6 @@ const LinkProcessor = struct {
         const referenced_title = ctx.file_contents[match.start + 2 .. match.end - 2];
         std.log.info("link to '{s}'", .{referenced_title});
 
-        // TODO strict_links support goes here
         var maybe_page_local_path = ctx.titles.get(referenced_title);
         if (maybe_page_local_path) |page_local_path| {
             var page = ctx.pages.get(page_local_path).?;
