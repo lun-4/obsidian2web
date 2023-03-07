@@ -15,6 +15,7 @@ pub const CheckmarkProcessor = struct {
         self.regex.deinit();
     }
 
+    // TODO change from *StringBuffer to `anytype` writer.
     pub fn handle(self: *Self, ctx: ProcessorContext, result: *StringBuffer) !void {
         _ = self;
         const match = ctx.captures[0].?;
@@ -92,6 +93,43 @@ pub const WebLinkProcessor = struct {
         try result.writer().print(
             "{s}<a href=\"{s}\">{s}</a>",
             .{ first_character, web_link, safe_web_link },
+        );
+    }
+};
+
+pub const TagProcessor = struct {
+    regex: libpcre.Regex,
+
+    const REGEX: [:0]const u8 = "( |^)#[a-zA-Z0-9-_]+";
+    const Self = @This();
+
+    pub fn init() !Self {
+        return Self{ .regex = try libpcre.Regex.compile(REGEX, .{}) };
+    }
+
+    pub fn deinit(self: Self) void {
+        self.regex.deinit();
+    }
+
+    pub fn handle(self: *Self, ctx: ProcessorContext, result: *StringBuffer) !void {
+        _ = self;
+        const full_match = ctx.captures[0].?;
+        const raw_text = ctx.file_contents[full_match.start..full_match.end];
+        const tag_text = std.mem.trimLeft(u8, raw_text, " ");
+        const tag_name = tag_text[1..];
+
+        // tag index pages will be generated after processor finishes
+        try ctx.current_page.tags.append(try ctx.allocator.dupe(u8, tag_text));
+
+        logger.info("tag: {s} {s}", .{ tag_text, tag_name });
+        try result.writer().print(
+            "{s}<a href=\"{s}/_/tags/{s}.html\">{s}</a>",
+            .{
+                if (raw_text[0] == ' ') " " else "",
+                ctx.build_file.config.webroot,
+                tag_name,
+                tag_text,
+            },
         );
     }
 };

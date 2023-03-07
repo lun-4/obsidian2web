@@ -3,6 +3,7 @@ const koino = @import("koino");
 const libpcre = @import("libpcre");
 
 const StringList = std.ArrayList(u8);
+const OwnedStringList = std.ArrayList([]const u8);
 const BuildFile = @import("build_file.zig").BuildFile;
 const processors = @import("processors.zig");
 
@@ -22,6 +23,7 @@ const Page = struct {
     html_path: ?[]const u8 = null,
     web_path: ?[]const u8 = null,
     errors: ?[]const u8 = null,
+    tags: OwnedStringList,
 };
 
 const PageMap = std.StringHashMap(Page);
@@ -99,6 +101,7 @@ fn addFilePage(
     tree: *PageTree,
     local_path: []const u8,
     fspath: []const u8,
+    allocator: std.mem.Allocator,
 ) !void {
     if (!std.mem.endsWith(u8, local_path, ".md")) return;
     std.log.info("new page: local='{s}' fs='{s}'", .{ local_path, fspath });
@@ -107,7 +110,11 @@ fn addFilePage(
     const title = title_raw[0 .. title_raw.len - 3];
     std.log.info("  title='{s}'", .{title});
     try titles.put(title, local_path);
-    try pages.put(local_path, Page{ .filesystem_path = fspath, .title = title });
+    try pages.put(local_path, Page{
+        .filesystem_path = fspath,
+        .title = title,
+        .tags = OwnedStringList.init(allocator),
+    });
     try tree.addPage(local_path);
 }
 pub const StringBuffer = std.ArrayList(u8);
@@ -137,7 +144,9 @@ pub const ProcessorContext = struct {
     pages: *PageMap,
     captures: []?libpcre.Capture,
     file_contents: []const u8,
+    current_page: *Page,
     current_html_path: []const u8,
+    allocator: std.mem.Allocator,
 };
 
 const Paths = struct {
@@ -392,7 +401,16 @@ pub fn main() anyerror!void {
     // TODO move to a Context entity
 
     var pages = PageMap.init(alloc);
-    defer pages.deinit();
+    defer {
+        var it = pages.iterator();
+        while (it.next()) |entry| {
+            for (entry.value_ptr.tags.items) |owned_string|
+                alloc.free(owned_string);
+            entry.value_ptr.tags.deinit();
+        }
+
+        pages.deinit();
+    }
 
     var titles = TitleMap.init(alloc);
     defer titles.deinit();
@@ -420,7 +438,14 @@ pub fn main() anyerror!void {
         var included_dir = std.fs.cwd().openIterableDir(joined_path, .{}) catch |err| switch (err) {
             error.NotDir => {
                 const owned_path = try string_arena.dupe(u8, joined_path);
-                try addFilePage(&pages, &titles, &tree, include_path, owned_path);
+                try addFilePage(
+                    &pages,
+                    &titles,
+                    &tree,
+                    include_path,
+                    owned_path,
+                    alloc,
+                );
                 continue;
             },
 
@@ -438,7 +463,14 @@ pub fn main() anyerror!void {
                     const joined_local_inner_path = try std.fs.path.join(string_arena, &[_][]const u8{ include_path, entry.path });
 
                     // we own joined_inner_path's memory, so we can use it
-                    try addFilePage(&pages, &titles, &tree, joined_local_inner_path, joined_inner_path);
+                    try addFilePage(
+                        &pages,
+                        &titles,
+                        &tree,
+                        joined_local_inner_path,
+                        joined_inner_path,
+                        alloc,
+                    );
                 },
 
                 else => {},
@@ -560,15 +592,13 @@ pub fn main() anyerror!void {
     const web_link_processor = processors.WebLinkProcessor{
         .regex = try libpcre.Regex.compile("[> ](https?:\\/\\/[a-zA-Z0-9\\./_\\-#\\?=]+)", .{}),
     };
-    //const tag_processor = processors.TagProcessor{
-    //    .regex = try libpcre.Regex.compile("#\S+", .{}),
-    //};
+    const tag_processor = try processors.TagProcessor.init();
 
     const PROCESSORS = .{
         link_processor,
         check_processor,
         web_link_processor,
-        // tag_processor,
+        tag_processor,
     };
 
     // run each processor over the file's contents
@@ -644,7 +674,9 @@ pub fn main() anyerror!void {
                     .pages = &pages,
                     .captures = captures,
                     .file_contents = file_contents,
+                    .current_page = entry.value_ptr,
                     .current_html_path = html_path,
+                    .allocator = alloc,
                 };
 
                 // processor callback is run here!
@@ -708,6 +740,17 @@ pub fn main() anyerror!void {
             _ = try writer.write(toc);
             try writeEmptyPage(writer, build_file);
         }
+    }
+
+    try generateTagPages();
+}
+
+fn generateTagPages() !void {
+    // TODO
+
+    var it = pages.iterator();
+    while (it.next()) |entry| {
+        _ = entry;
     }
 }
 
