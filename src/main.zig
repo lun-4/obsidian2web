@@ -6,6 +6,7 @@ const StringList = std.ArrayList(u8);
 const OwnedStringList = std.ArrayList([]const u8);
 const BuildFile = @import("build_file.zig").BuildFile;
 const processors = @import("processors.zig");
+const util = @import("util.zig");
 
 const logger = std.log.scoped(.obsidian2web);
 
@@ -124,23 +125,6 @@ fn addFilePage(
 pub const StringBuffer = std.ArrayList(u8);
 
 // TODO move to util
-pub fn encodeForHTML(allocator: std.mem.Allocator, in: []const u8) ![]const u8 {
-    var result = StringList.init(allocator);
-    defer result.deinit();
-
-    for (in) |char| {
-        switch (char) {
-            '&' => try result.appendSlice("&amp;"),
-            '<' => try result.appendSlice("&lt;"),
-            '>' => try result.appendSlice("&gt;"),
-            '"' => try result.appendSlice("&quot;"),
-            '\'' => try result.appendSlice("&#x27;"),
-            else => try result.append(char),
-        }
-    }
-
-    return try result.toOwnedSlice();
-}
 
 pub const ProcessorContext = struct {
     build_file: *const BuildFile,
@@ -288,11 +272,9 @@ pub fn generateToc(
         try writer.print("<details>", .{});
 
         const child_folder_entry = folder.getEntry(folder_name).?;
-        const safe_folder_name = try encodeForHTML(result.allocator, folder_name);
-        defer result.allocator.free(safe_folder_name);
         try result.writer().print(
             "<summary>{s}</summary>\n",
-            .{safe_folder_name},
+            .{util.unsafeHTML(folder_name)},
         );
 
         context.ident += 1;
@@ -312,11 +294,6 @@ pub fn generateToc(
 
         const title = std.fs.path.basename(toc_paths.html_path);
 
-        const safe_web_path = try encodeForHTML(result.allocator, toc_paths.web_path);
-        defer result.allocator.free(safe_web_path);
-        const safe_title = try encodeForHTML(result.allocator, title);
-        defer result.allocator.free(safe_title);
-
         const current_attr = if (current_page_path != null and std.mem.eql(u8, current_page_path.?, toc_paths.web_path))
             "aria-current=\"page\" "
         else
@@ -324,7 +301,12 @@ pub fn generateToc(
 
         try result.writer().print(
             "<li><a class=\"toc-link\" {s}href=\"{s}{s}\">{s}</a></li>\n",
-            .{ current_attr, build_file.config.webroot, safe_web_path, safe_title },
+            .{
+                current_attr,
+                build_file.config.webroot,
+                util.unsafeHTML(toc_paths.web_path),
+                util.unsafeHTML(title),
+            },
         );
     }
     try result.writer().print("</ul>\n", .{});
@@ -538,9 +520,7 @@ pub fn main() anyerror!void {
         var path_buffer: [2048]u8 = undefined;
         const paths = try parsePaths(local_path, &path_buffer);
 
-        const safe_title = try encodeForHTML(alloc, page.title);
-        defer alloc.free(safe_title);
-        try writeHead(result.writer(), build_file, safe_title);
+        try writeHead(result.writer(), build_file, page.title);
 
         const pageToc = try tocForPage(
             &build_file,
@@ -559,9 +539,14 @@ pub fn main() anyerror!void {
 
         try result.writer().print(
             \\  <h2>{s}</h2><p>
-        , .{safe_title});
+        , .{util.unsafeHTML(page.title)});
 
-        try koino.html.print(result.writer(), alloc, .{ .render = .{ .hard_breaks = true } }, doc);
+        try koino.html.print(
+            result.writer(),
+            alloc,
+            .{ .render = .{ .hard_breaks = true } },
+            doc,
+        );
 
         try result.appendSlice(
             \\  </p></main>
@@ -800,9 +785,7 @@ fn generateTagPages(
 
         var writer = output_file.writer();
 
-        const safe_title = try encodeForHTML(allocator, tag_name);
-        defer allocator.free(safe_title);
-        try writeHead(writer, build_file, safe_title);
+        try writeHead(writer, build_file, tag_name);
         _ = try writer.write(
             \\  </nav>
             \\  <main class="text">
@@ -815,7 +798,7 @@ fn generateTagPages(
             }
         }.inner);
 
-        try writer.print("<h1>{s}</h1><p>", .{safe_title});
+        try writer.print("<h1>{s}</h1><p>", .{util.unsafeHTML(tag_name)});
         try writer.print("({d} pages)", .{entry.value_ptr.items.len});
         try writer.print("<div class=\"tag-page\">", .{});
 
@@ -837,7 +820,12 @@ fn generateTagPages(
                 \\ 	</a>
                 \\ </div><p>
             ,
-                .{ build_file.config.webroot, page.web_path.?, page.title, page_preview_text },
+                .{
+                    build_file.config.webroot,
+                    page.web_path.?,
+                    util.unsafeHTML(page.title),
+                    util.unsafeHTML(page_preview_text),
+                },
             );
         }
 
@@ -871,7 +859,7 @@ fn writeHead(writer: anytype, build_file: BuildFile, title: []const u8) !void {
         \\  </head>
         \\  <body>
         \\  <nav class="toc">
-    , .{ title, build_file.config.webroot, build_file.config.webroot });
+    , .{ util.unsafeHTML(title), build_file.config.webroot, build_file.config.webroot });
 }
 
 // TODO make this usable on the main pipeline too?

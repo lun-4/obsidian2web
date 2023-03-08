@@ -4,7 +4,7 @@ const root = @import("root");
 const ProcessorContext = root.ProcessorContext;
 const StringBuffer = root.StringBuffer;
 const logger = std.log.scoped(.obsidian2web_processors);
-const encodeForHTML = root.encodeForHTML;
+const util = @import("util.zig");
 
 pub const CheckmarkProcessor = struct {
     regex: libpcre.Regex,
@@ -44,14 +44,12 @@ pub const LinkProcessor = struct {
         var maybe_page_local_path = ctx.titles.get(referenced_title);
         if (maybe_page_local_path) |page_local_path| {
             var page = ctx.pages.get(page_local_path).?;
-            const safe_referenced_title = try encodeForHTML(result.allocator, referenced_title);
-            defer result.allocator.free(safe_referenced_title);
             try result.writer().print(
                 "<a href=\"{s}/{?s}\">{s}</a>",
                 .{
                     ctx.build_file.config.webroot,
                     page.web_path,
-                    safe_referenced_title,
+                    util.unsafeHTML(referenced_title),
                 },
             );
         } else {
@@ -88,11 +86,9 @@ pub const WebLinkProcessor = struct {
         const web_link = ctx.file_contents[match.start..match.end];
         logger.info("text web link to '{s}' (first char '{s}')", .{ web_link, first_character });
 
-        const safe_web_link = try encodeForHTML(result.allocator, web_link);
-        defer result.allocator.free(safe_web_link);
         try result.writer().print(
             "{s}<a href=\"{s}\">{s}</a>",
-            .{ first_character, web_link, safe_web_link },
+            .{ first_character, web_link, util.unsafeHTML(web_link) },
         );
     }
 };
