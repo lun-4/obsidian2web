@@ -29,6 +29,7 @@ fn encodeForHTML(writer: anytype, in: []const u8) !void {
             '>' => try writer.write("&gt;"),
             '"' => try writer.write("&quot;"),
             '\'' => try writer.write("&#x27;"),
+            '\\' => try writer.write("&#92;"),
             else => try writer.writeByte(char),
         };
     }
