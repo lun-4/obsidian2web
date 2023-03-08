@@ -130,7 +130,8 @@ nav li:has(a[aria-current="page"]) {
   border-width: 4px;
   border-color: #888888;
   width: 25rem;
-  flex: 1 0 30rem;
+  flex: 0 0 30rem;
+  padding: 2rem;
 }
 
 .page-preview-text {
