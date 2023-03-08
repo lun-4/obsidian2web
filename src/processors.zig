@@ -100,11 +100,15 @@ pub const WebLinkProcessor = struct {
 pub const TagProcessor = struct {
     regex: libpcre.Regex,
 
+    // why doesnt this work on tags in the beginning of the line
     const REGEX: [:0]const u8 = "( |^)#[a-zA-Z0-9-_]+";
     const Self = @This();
 
     pub fn init() !Self {
-        return Self{ .regex = try libpcre.Regex.compile(REGEX, .{}) };
+        return Self{ .regex = try libpcre.Regex.compile(
+            REGEX,
+            .{ .Multiline = true },
+        ) };
     }
 
     pub fn deinit(self: Self) void {

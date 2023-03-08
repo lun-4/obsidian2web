@@ -815,13 +815,31 @@ fn generateTagPages(
             }
         }.inner);
 
+        try writer.print("<div class=\"tag-page\">", .{});
+
         for (entry.value_ptr.items) |page| {
             // TODO escape data
+            var page_fd = try std.fs.cwd().openFile(
+                page.filesystem_path,
+                .{ .mode = .read_only },
+            );
+            defer page_fd.close();
+            var preview_buffer: [256]u8 = undefined;
+            const page_preview_text_read_bytes = try page_fd.read(&preview_buffer);
+            const page_preview_text = preview_buffer[0..page_preview_text_read_bytes];
             try writer.print(
-                "<a href=\"{s}{s}\">{s}</a><p>",
-                .{ build_file.config.webroot, page.web_path.?, page.title },
+                \\ <div class="page-preview">
+                \\ 	<a href="{s}{s}">
+                \\ 		<div class="page-preview-title"><h2>{s}</h2></div>
+                \\ 		<div class="page-preview-text">{s}</div>
+                \\ 	</a>
+                \\ </div><p>
+            ,
+                .{ build_file.config.webroot, page.web_path.?, page.title, page_preview_text },
             );
         }
+
+        try writer.print("</div>", .{});
 
         _ = try writer.write(
             \\  </main>
