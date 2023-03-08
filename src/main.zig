@@ -18,6 +18,7 @@ const PageBuildStatus = enum {
 const Page = struct {
     filesystem_path: []const u8,
     title: []const u8,
+    ctime: i128,
     // TODO change this to union(enum)
     status: PageBuildStatus = .Unbuilt,
     html_path: ?[]const u8 = null,
@@ -110,8 +111,11 @@ fn addFilePage(
     const title = title_raw[0 .. title_raw.len - 3];
     std.log.info("  title='{s}'", .{title});
     try titles.put(title, local_path);
+
+    var stat = try std.fs.cwd().statFile(fspath);
     try pages.put(local_path, Page{
         .filesystem_path = fspath,
+        .ctime = stat.ctime,
         .title = title,
         .tags = OwnedStringList.init(allocator),
     });
@@ -742,15 +746,95 @@ pub fn main() anyerror!void {
         }
     }
 
-    try generateTagPages();
+    try generateTagPages(alloc, build_file, pages);
 }
 
-fn generateTagPages() !void {
-    // TODO
+const PageList = std.ArrayList(*const Page);
+
+fn generateTagPages(
+    allocator: std.mem.Allocator,
+    build_file: BuildFile,
+    pages: PageMap,
+) !void {
+    var tag_map = std.StringHashMap(PageList).init(allocator);
+
+    defer {
+        var tags_it = tag_map.iterator();
+        while (tags_it.next()) |entry| entry.value_ptr.deinit();
+        tag_map.deinit();
+    }
 
     var it = pages.iterator();
     while (it.next()) |entry| {
-        _ = entry;
+        var page = entry.value_ptr;
+        for (page.tags.items) |tag| {
+            var maybe_pagelist = try tag_map.getOrPut(tag);
+
+            if (maybe_pagelist.found_existing) {
+                try maybe_pagelist.value_ptr.append(entry.value_ptr);
+            } else {
+                maybe_pagelist.value_ptr.* = PageList.init(allocator);
+                try maybe_pagelist.value_ptr.append(entry.value_ptr);
+            }
+        }
+    }
+
+    try std.fs.cwd().makePath("public/_/tags");
+
+    var tags_it = tag_map.iterator();
+    while (tags_it.next()) |entry| {
+        var tag_name = entry.key_ptr.*;
+        logger.info("generating tag page: {s}", .{tag_name});
+        var buf: [512]u8 = undefined;
+        const output_path = try std.fmt.bufPrint(
+            &buf,
+            "public/_/tags/{s}.html",
+            .{tag_name},
+        );
+
+        var output_file = try std.fs.cwd().createFile(
+            output_path,
+            .{ .read = false, .truncate = true },
+        );
+        defer output_file.close();
+
+        var writer = output_file.writer();
+
+        const safe_title = try encodeForHTML(allocator, tag_name);
+        defer allocator.free(safe_title);
+        try writeHead(writer, build_file, safe_title);
+        _ = try writer.write(
+            \\  </nav>
+            \\  <main class="text">
+        );
+
+        std.sort.sort(*const Page, entry.value_ptr.items, {}, struct {
+            fn inner(context: void, a: *const Page, b: *const Page) bool {
+                _ = context;
+                return a.ctime < b.ctime;
+            }
+        }.inner);
+
+        for (entry.value_ptr.items) |page| {
+            // TODO escape data
+            try writer.print(
+                "<a href=\"{s}{s}\">{s}</a><p>",
+                .{ build_file.config.webroot, page.web_path.?, page.title },
+            );
+        }
+
+        _ = try writer.write(
+            \\  </main>
+        );
+
+        if (build_file.config.project_footer) {
+            _ = try writer.write(FOOTER);
+        }
+
+        _ = try writer.write(
+            \\  </body>
+            \\</html>
+        );
     }
 }
 

@@ -119,7 +119,7 @@ pub const TagProcessor = struct {
         const tag_name = tag_text[1..];
 
         // tag index pages will be generated after processor finishes
-        try ctx.current_page.tags.append(try ctx.allocator.dupe(u8, tag_text));
+        try ctx.current_page.tags.append(try ctx.allocator.dupe(u8, tag_name));
 
         logger.info("tag: {s} {s}", .{ tag_text, tag_name });
         try result.writer().print(
