@@ -101,14 +101,11 @@ pub const TagProcessor = struct {
     regex: libpcre.Regex,
 
     // why doesnt this work on tags in the beginning of the line
-    const REGEX: [:0]const u8 = "( |^)#[a-zA-Z0-9-_]+";
+    const REGEX: [:0]const u8 = "#[a-zA-Z0-9-_]+";
     const Self = @This();
 
     pub fn init() !Self {
-        return Self{ .regex = try libpcre.Regex.compile(
-            REGEX,
-            .{ .Multiline = true },
-        ) };
+        return Self{ .regex = try libpcre.Regex.compile(REGEX, .{}) };
     }
 
     pub fn deinit(self: Self) void {
@@ -119,6 +116,16 @@ pub const TagProcessor = struct {
         _ = self;
         const full_match = ctx.captures[0].?;
         const raw_text = ctx.file_contents[full_match.start..full_match.end];
+
+        // TODO try to do this first_character check in pure regex
+        // rather than doing it in code like this lmao
+
+        const first_character = if (full_match.start == 0) ' ' else ctx.file_contents[full_match.start - 1];
+        logger.info("fristt char '{s}'", .{&[_]u8{first_character}});
+        if (first_character != ' ' and first_character != '>') {
+            return try result.writer().print("{s}", .{raw_text});
+        }
+
         const tag_text = std.mem.trimLeft(u8, raw_text, " ");
         const tag_name = tag_text[1..];
 
