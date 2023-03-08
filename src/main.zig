@@ -3,7 +3,12 @@ const koino = @import("koino");
 const libpcre = @import("libpcre");
 
 const StringList = std.ArrayList(u8);
+const OwnedStringList = std.ArrayList([]const u8);
 const BuildFile = @import("build_file.zig").BuildFile;
+const processors = @import("processors.zig");
+const util = @import("util.zig");
+
+const logger = std.log.scoped(.obsidian2web);
 
 const PageBuildStatus = enum {
     Unbuilt,
@@ -14,10 +19,13 @@ const PageBuildStatus = enum {
 const Page = struct {
     filesystem_path: []const u8,
     title: []const u8,
+    ctime: i128,
+    // TODO change this to union(enum)
     status: PageBuildStatus = .Unbuilt,
     html_path: ?[]const u8 = null,
     web_path: ?[]const u8 = null,
     errors: ?[]const u8 = null,
+    tags: OwnedStringList,
 };
 
 const PageMap = std.StringHashMap(Page);
@@ -95,6 +103,7 @@ fn addFilePage(
     tree: *PageTree,
     local_path: []const u8,
     fspath: []const u8,
+    allocator: std.mem.Allocator,
 ) !void {
     if (!std.mem.endsWith(u8, local_path, ".md")) return;
     std.log.info("new page: local='{s}' fs='{s}'", .{ local_path, fspath });
@@ -103,126 +112,29 @@ fn addFilePage(
     const title = title_raw[0 .. title_raw.len - 3];
     std.log.info("  title='{s}'", .{title});
     try titles.put(title, local_path);
-    try pages.put(local_path, Page{ .filesystem_path = fspath, .title = title });
+
+    var stat = try std.fs.cwd().statFile(fspath);
+    try pages.put(local_path, Page{
+        .filesystem_path = fspath,
+        .ctime = stat.ctime,
+        .title = title,
+        .tags = OwnedStringList.init(allocator),
+    });
     try tree.addPage(local_path);
 }
-const StringBuffer = std.ArrayList(u8);
+pub const StringBuffer = std.ArrayList(u8);
 
-fn encodeForHTML(allocator: std.mem.Allocator, in: []const u8) ![]const u8 {
-    var result = StringList.init(allocator);
-    defer result.deinit();
+// TODO move to util
 
-    for (in) |char| {
-        switch (char) {
-            '&' => try result.appendSlice("&amp;"),
-            '<' => try result.appendSlice("&lt;"),
-            '>' => try result.appendSlice("&gt;"),
-            '"' => try result.appendSlice("&quot;"),
-            '\'' => try result.appendSlice("&#x27;"),
-            else => try result.append(char),
-        }
-    }
-
-    return try result.toOwnedSlice();
-}
-
-const ProcessorContext = struct {
+pub const ProcessorContext = struct {
     build_file: *const BuildFile,
     titles: *TitleMap,
     pages: *PageMap,
     captures: []?libpcre.Capture,
     file_contents: []const u8,
+    current_page: *Page,
     current_html_path: []const u8,
-};
-
-const CheckmarkProcessor = struct {
-    regex: libpcre.Regex,
-
-    const Self = @This();
-
-    pub fn deinit(self: *Self) void {
-        self.regex.deinit();
-    }
-
-    pub fn handle(self: *Self, ctx: ProcessorContext, result: *StringBuffer) !void {
-        _ = self;
-        const match = ctx.captures[0].?;
-        const check = ctx.file_contents[match.start..match.end];
-        try result.writer().print("<code>{s}</code>", .{check});
-    }
-};
-
-const LinkProcessor = struct {
-    regex: libpcre.Regex,
-
-    const Self = @This();
-
-    pub fn deinit(self: *Self) void {
-        self.regex.deinit();
-    }
-
-    pub fn handle(self: *Self, ctx: ProcessorContext, result: *StringBuffer) !void {
-        _ = self;
-        const match = ctx.captures[0].?;
-
-        std.log.info("match {} {}", .{ match.start, match.end });
-        const referenced_title = ctx.file_contents[match.start + 2 .. match.end - 2];
-        std.log.info("link to '{s}'", .{referenced_title});
-
-        var maybe_page_local_path = ctx.titles.get(referenced_title);
-        if (maybe_page_local_path) |page_local_path| {
-            var page = ctx.pages.get(page_local_path).?;
-            const safe_referenced_title = try encodeForHTML(result.allocator, referenced_title);
-            defer result.allocator.free(safe_referenced_title);
-            try result.writer().print(
-                "<a href=\"{s}/{?s}\">{s}</a>",
-                .{
-                    ctx.build_file.config.webroot,
-                    page.web_path,
-                    safe_referenced_title,
-                },
-            );
-        } else {
-            if (ctx.build_file.config.strict_links) {
-                std.log.err(
-                    "file '{s}' has link to file '{s}' which is not included!",
-                    .{ ctx.current_html_path, referenced_title },
-                );
-                return error.InvalidLinksFound;
-            } else {
-                try result.writer().print("[[{s}]]", .{referenced_title});
-            }
-        }
-    }
-};
-
-const WebLinkProcessor = struct {
-    regex: libpcre.Regex,
-
-    const Self = @This();
-
-    pub fn deinit(self: *Self) void {
-        self.regex.deinit();
-    }
-
-    pub fn handle(self: *Self, ctx: ProcessorContext, result: *StringBuffer) !void {
-        _ = self;
-        const full_match = ctx.captures[0].?;
-        const first_character = ctx.file_contents[full_match.start .. full_match.start + 1];
-
-        const match = ctx.captures[1].?;
-
-        std.log.info("link match {} {}", .{ match.start, match.end });
-        const web_link = ctx.file_contents[match.start..match.end];
-        std.log.info("text web link to '{s}' (first char '{s}')", .{ web_link, first_character });
-
-        const safe_web_link = try encodeForHTML(result.allocator, web_link);
-        defer result.allocator.free(safe_web_link);
-        try result.writer().print(
-            "{s}<a href=\"{s}\">{s}</a>",
-            .{ first_character, web_link, safe_web_link },
-        );
-    }
+    allocator: std.mem.Allocator,
 };
 
 const Paths = struct {
@@ -360,11 +272,9 @@ pub fn generateToc(
         try writer.print("<details>", .{});
 
         const child_folder_entry = folder.getEntry(folder_name).?;
-        const safe_folder_name = try encodeForHTML(result.allocator, folder_name);
-        defer result.allocator.free(safe_folder_name);
         try result.writer().print(
             "<summary>{s}</summary>\n",
-            .{safe_folder_name},
+            .{util.unsafeHTML(folder_name)},
         );
 
         context.ident += 1;
@@ -384,11 +294,6 @@ pub fn generateToc(
 
         const title = std.fs.path.basename(toc_paths.html_path);
 
-        const safe_web_path = try encodeForHTML(result.allocator, toc_paths.web_path);
-        defer result.allocator.free(safe_web_path);
-        const safe_title = try encodeForHTML(result.allocator, title);
-        defer result.allocator.free(safe_title);
-
         const current_attr = if (current_page_path != null and std.mem.eql(u8, current_page_path.?, toc_paths.web_path))
             "aria-current=\"page\" "
         else
@@ -396,7 +301,12 @@ pub fn generateToc(
 
         try result.writer().print(
             "<li><a class=\"toc-link\" {s}href=\"{s}{s}\">{s}</a></li>\n",
-            .{ current_attr, build_file.config.webroot, safe_web_path, safe_title },
+            .{
+                current_attr,
+                build_file.config.webroot,
+                util.unsafeHTML(toc_paths.web_path),
+                util.unsafeHTML(title),
+            },
         );
     }
     try result.writer().print("</ul>\n", .{});
@@ -474,8 +384,19 @@ pub fn main() anyerror!void {
     var vault_dir = try std.fs.cwd().openIterableDir(build_file.vault_path, .{});
     defer vault_dir.close();
 
+    // TODO move to a Context entity
+
     var pages = PageMap.init(alloc);
-    defer pages.deinit();
+    defer {
+        var it = pages.iterator();
+        while (it.next()) |entry| {
+            for (entry.value_ptr.tags.items) |owned_string|
+                alloc.free(owned_string);
+            entry.value_ptr.tags.deinit();
+        }
+
+        pages.deinit();
+    }
 
     var titles = TitleMap.init(alloc);
     defer titles.deinit();
@@ -487,8 +408,14 @@ pub fn main() anyerror!void {
     var tree = PageTree.init(alloc);
     defer tree.deinit();
 
+    // resolve all paths given in include directives into Page entities
+    // in the relevant maps (also including title and tree)
+
     for (build_file.includes.items) |include_path| {
-        const joined_path = try std.fs.path.resolve(alloc, &[_][]const u8{ build_file.vault_path, include_path });
+        const joined_path = try std.fs.path.resolve(
+            alloc,
+            &[_][]const u8{ build_file.vault_path, include_path },
+        );
         defer alloc.free(joined_path);
 
         std.log.info("include path: {s}", .{joined_path});
@@ -497,7 +424,14 @@ pub fn main() anyerror!void {
         var included_dir = std.fs.cwd().openIterableDir(joined_path, .{}) catch |err| switch (err) {
             error.NotDir => {
                 const owned_path = try string_arena.dupe(u8, joined_path);
-                try addFilePage(&pages, &titles, &tree, include_path, owned_path);
+                try addFilePage(
+                    &pages,
+                    &titles,
+                    &tree,
+                    include_path,
+                    owned_path,
+                    alloc,
+                );
                 continue;
             },
 
@@ -515,7 +449,14 @@ pub fn main() anyerror!void {
                     const joined_local_inner_path = try std.fs.path.join(string_arena, &[_][]const u8{ include_path, entry.path });
 
                     // we own joined_inner_path's memory, so we can use it
-                    try addFilePage(&pages, &titles, &tree, joined_local_inner_path, joined_inner_path);
+                    try addFilePage(
+                        &pages,
+                        &titles,
+                        &tree,
+                        joined_local_inner_path,
+                        joined_inner_path,
+                        alloc,
+                    );
                 },
 
                 else => {},
@@ -523,19 +464,8 @@ pub fn main() anyerror!void {
         }
     }
 
-    const resources = .{ .{ "resources/styles.css", "styles.css" }, .{ "resources/main.js", "main.js" } };
-
-    inline for (resources) |resource| {
-        const resource_text = @embedFile(resource.@"0");
-
-        const resource_fspath = "public/" ++ resource.@"1";
-        const leading_path_to_file = std.fs.path.dirname(resource_fspath).?;
-        try std.fs.cwd().makePath(leading_path_to_file);
-
-        var resource_fd = try std.fs.cwd().createFile(resource_fspath, .{ .truncate = true });
-        defer resource_fd.close();
-        _ = try resource_fd.write(resource_text);
-    }
+    try std.fs.cwd().makePath("public/");
+    try createStaticResources();
 
     var pages_it = pages.iterator();
 
@@ -543,12 +473,17 @@ pub fn main() anyerror!void {
     defer toc_result.deinit();
 
     var toc_ctx: TocContext = .{};
-    try generateToc(&toc_result, &build_file, &pages, &tree.root.getPtr(".").?.dir, &toc_ctx, null);
+    try generateToc(
+        &toc_result,
+        &build_file,
+        &pages,
+        &tree.root.getPtr(".").?.dir,
+        &toc_ctx,
+        null,
+    );
 
     const toc = try toc_result.toOwnedSlice();
     defer alloc.free(toc);
-
-    const webroot = build_file.config.webroot;
 
     // first pass: use koino to parse all that markdown into html
     while (pages_it.next()) |entry| {
@@ -557,10 +492,16 @@ pub fn main() anyerror!void {
         const fspath = entry.value_ptr.*.filesystem_path;
 
         std.log.info("processing '{s}'", .{fspath});
-        var page_fd = try std.fs.cwd().openFile(fspath, .{ .mode = .read_only });
+        var page_fd = try std.fs.cwd().openFile(
+            fspath,
+            .{ .mode = .read_only },
+        );
         defer page_fd.close();
 
-        const file_contents = try page_fd.reader().readAllAlloc(alloc, std.math.maxInt(usize));
+        const file_contents = try page_fd.reader().readAllAlloc(
+            alloc,
+            std.math.maxInt(usize),
+        );
         defer alloc.free(file_contents);
 
         var p = try koino.parser.Parser.init(alloc, .{});
@@ -579,23 +520,14 @@ pub fn main() anyerror!void {
         var path_buffer: [2048]u8 = undefined;
         const paths = try parsePaths(local_path, &path_buffer);
 
-        const safe_title = try encodeForHTML(alloc, page.title);
-        defer alloc.free(safe_title);
-        try result.writer().print(
-            \\<!DOCTYPE html>
-            \\<html lang="en">
-            \\  <head>
-            \\    <meta charset="UTF-8">
-            \\    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            \\    <title>{s}</title>
-            \\    <script src="{s}/main.js"></script>
-            \\    <link rel="stylesheet" href="{s}/styles.css">
-            \\  </head>
-            \\  <body>
-            \\  <nav class="toc">
-        , .{ safe_title, webroot, webroot });
+        try writeHead(result.writer(), build_file, page.title);
 
-        const pageToc = try tocForPage(&build_file, &pages, &tree, paths.web_path);
+        const pageToc = try tocForPage(
+            &build_file,
+            &pages,
+            &tree,
+            paths.web_path,
+        );
         defer alloc.free(pageToc);
 
         try result.appendSlice(pageToc);
@@ -607,9 +539,14 @@ pub fn main() anyerror!void {
 
         try result.writer().print(
             \\  <h2>{s}</h2><p>
-        , .{safe_title});
+        , .{util.unsafeHTML(page.title)});
 
-        try koino.html.print(result.writer(), alloc, .{ .render = .{ .hard_breaks = true } }, doc);
+        try koino.html.print(
+            result.writer(),
+            alloc,
+            .{ .render = .{ .hard_breaks = true } },
+            doc,
+        );
 
         try result.appendSlice(
             \\  </p></main>
@@ -635,25 +572,32 @@ pub fn main() anyerror!void {
         entry.value_ptr.*.web_path = try string_arena.dupe(u8, paths.web_path);
         entry.value_ptr.*.status = .Built;
     }
-    const link_processor = LinkProcessor{
+    const link_processor = processors.LinkProcessor{
         .regex = try libpcre.Regex.compile("\\[\\[.+\\]\\]", .{}),
     };
-    const check_processor = CheckmarkProcessor{
+    const check_processor = processors.CheckmarkProcessor{
         .regex = try libpcre.Regex.compile("\\[.\\]", .{}),
     };
-    const web_link_processor = WebLinkProcessor{
+    const web_link_processor = processors.WebLinkProcessor{
         .regex = try libpcre.Regex.compile("[> ](https?:\\/\\/[a-zA-Z0-9\\./_\\-#\\?=]+)", .{}),
     };
+    const tag_processor = try processors.TagProcessor.init();
 
-    const processors = .{
+    const PROCESSORS = .{
         link_processor,
         check_processor,
         web_link_processor,
+        tag_processor,
     };
 
+    // run each processor over the file's contents
+    // this generalizes on the regex matching code so that all processors
+    // are just called back when we want to get a replacement text on
+    // top of them
+
     comptime var i = 0;
-    inline while (i < processors.len) : (i += 1) {
-        var processor = processors[i];
+    inline while (i < PROCESSORS.len) : (i += 1) {
+        var processor = PROCESSORS[i];
         defer processor.deinit();
 
         var link_pages_it = pages.iterator();
@@ -661,19 +605,31 @@ pub fn main() anyerror!void {
             const page = entry.value_ptr.*;
             try std.testing.expectEqual(PageBuildStatus.Built, page.status);
             const html_path = entry.value_ptr.html_path.?;
-            std.log.info("running {s} for file '{s}'", .{ @typeName(@TypeOf(processor)), html_path });
+            logger.info(
+                "running {s} for file '{s}'",
+                .{ @typeName(@TypeOf(processor)), html_path },
+            );
 
-            var file_contents_mut: []const u8 = undefined;
-            {
-                var page_fd = try std.fs.cwd().openFile(html_path, .{ .mode = .read_only });
+            const file_contents = blk: {
+                var page_fd = try std.fs.cwd().openFile(
+                    html_path,
+                    .{ .mode = .read_only },
+                );
                 defer page_fd.close();
 
-                file_contents_mut = try page_fd.reader().readAllAlloc(alloc, std.math.maxInt(usize));
-            }
-            const file_contents = file_contents_mut;
+                break :blk try page_fd.reader().readAllAlloc(
+                    alloc,
+                    std.math.maxInt(usize),
+                );
+            };
             defer alloc.free(file_contents);
 
-            const matches = try captureAll(processor.regex, alloc, file_contents, .{});
+            const matches = try captureAll(
+                processor.regex,
+                alloc,
+                file_contents,
+                .{},
+            );
             defer {
                 for (matches.items) |match| alloc.free(match);
                 matches.deinit();
@@ -693,9 +649,13 @@ pub fn main() anyerror!void {
             for (matches.items) |captures| {
                 const match = captures[0].?;
                 _ = if (last_match == null)
-                    try result.writer().write(file_contents[0..match.start])
+                    try result.writer().write(
+                        file_contents[0..match.start],
+                    )
                 else
-                    try result.writer().write(file_contents[last_match.?.end..match.start]);
+                    try result.writer().write(
+                        file_contents[last_match.?.end..match.start],
+                    );
 
                 var ctx = ProcessorContext{
                     .build_file = &build_file,
@@ -703,19 +663,27 @@ pub fn main() anyerror!void {
                     .pages = &pages,
                     .captures = captures,
                     .file_contents = file_contents,
+                    .current_page = entry.value_ptr,
                     .current_html_path = html_path,
+                    .allocator = alloc,
                 };
 
+                // processor callback is run here!
                 try processor.handle(ctx, &result);
                 last_match = match;
             }
 
-            // last_match.?.end to end of file
+            // if we're at the end of the file and there's no matches
+            // to make anymore, just copy paste the rest
 
             _ = if (last_match == null)
-                try result.writer().write(file_contents[0..file_contents.len])
+                try result.writer().write(
+                    file_contents[0..file_contents.len],
+                )
             else
-                try result.writer().write(file_contents[last_match.?.end..file_contents.len]);
+                try result.writer().write(
+                    file_contents[last_match.?.end..file_contents.len],
+                );
 
             {
                 var page_fd = try std.fs.cwd().openFile(
@@ -728,12 +696,18 @@ pub fn main() anyerror!void {
             }
         }
     }
+
+    // generate index file
     {
-        const index_out_fd = try std.fs.cwd().createFile("public/index.html", .{ .truncate = true });
+        const index_out_fd = try std.fs.cwd().createFile(
+            "public/index.html",
+            .{ .truncate = true },
+        );
         defer index_out_fd.close();
 
+        // if an index file was provided in the config, copypaste the resulting
+        // HTML as that'll work
         if (build_file.config.index) |path_to_index_file| {
-            // just copy the html into index.html LOL
             var path_buffer: [2048]u8 = undefined;
             const paths = try parsePaths(path_to_index_file, &path_buffer);
 
@@ -746,41 +720,185 @@ pub fn main() anyerror!void {
 
             try std.testing.expect(written_bytes > 0);
         } else {
-            // generate our own empty file that contains the table of contents
+            // if not, generate our own empty file
+            // that contains just the table of contents
 
             const writer = index_out_fd.writer();
 
-            try writer.print(
-                \\<!DOCTYPE html>
-                \\<html lang="en">
-                \\  <head>
-                \\    <meta charset="UTF-8">
-                \\    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                \\    <title>{s}</title>
-                \\    <script src="/main.js"></script>
-                \\    <link rel="stylesheet" href="/styles.css">
-                \\  </head>
-                \\  <body>
-                \\  <nav class="toc">
-            , .{"Index Page"});
-
+            try writeHead(writer, build_file, "Index Page");
             _ = try writer.write(toc);
+            try writeEmptyPage(writer, build_file);
+        }
+    }
 
-            _ = try writer.write(
-                \\  </nav>
-                \\  <main class="text">
-                \\  </main>
-            );
+    try generateTagPages(alloc, build_file, pages);
+}
 
-            if (build_file.config.project_footer) {
-                _ = try writer.write(FOOTER);
+const PageList = std.ArrayList(*const Page);
+
+fn generateTagPages(
+    allocator: std.mem.Allocator,
+    build_file: BuildFile,
+    pages: PageMap,
+) !void {
+    var tag_map = std.StringHashMap(PageList).init(allocator);
+
+    defer {
+        var tags_it = tag_map.iterator();
+        while (tags_it.next()) |entry| entry.value_ptr.deinit();
+        tag_map.deinit();
+    }
+
+    var it = pages.iterator();
+    while (it.next()) |entry| {
+        var page = entry.value_ptr;
+        for (page.tags.items) |tag| {
+            var maybe_pagelist = try tag_map.getOrPut(tag);
+
+            if (maybe_pagelist.found_existing) {
+                try maybe_pagelist.value_ptr.append(entry.value_ptr);
+            } else {
+                maybe_pagelist.value_ptr.* = PageList.init(allocator);
+                try maybe_pagelist.value_ptr.append(entry.value_ptr);
             }
+        }
+    }
 
-            _ = try writer.write(
-                \\  </body>
-                \\</html>
+    try std.fs.cwd().makePath("public/_/tags");
+
+    var tags_it = tag_map.iterator();
+    while (tags_it.next()) |entry| {
+        var tag_name = entry.key_ptr.*;
+        logger.info("generating tag page: {s}", .{tag_name});
+        var buf: [512]u8 = undefined;
+        const output_path = try std.fmt.bufPrint(
+            &buf,
+            "public/_/tags/{s}.html",
+            .{tag_name},
+        );
+
+        var output_file = try std.fs.cwd().createFile(
+            output_path,
+            .{ .read = false, .truncate = true },
+        );
+        defer output_file.close();
+
+        var writer = output_file.writer();
+
+        try writeHead(writer, build_file, tag_name);
+        _ = try writer.write(
+            \\  </nav>
+            \\  <main class="text">
+        );
+
+        std.sort.sort(*const Page, entry.value_ptr.items, {}, struct {
+            fn inner(context: void, a: *const Page, b: *const Page) bool {
+                _ = context;
+                return a.ctime < b.ctime;
+            }
+        }.inner);
+
+        try writer.print("<h1>{s}</h1><p>", .{util.unsafeHTML(tag_name)});
+        try writer.print("({d} pages)", .{entry.value_ptr.items.len});
+        try writer.print("<div class=\"tag-page\">", .{});
+
+        for (entry.value_ptr.items) |page| {
+            // TODO escape data
+            var page_fd = try std.fs.cwd().openFile(
+                page.filesystem_path,
+                .{ .mode = .read_only },
+            );
+            defer page_fd.close();
+            var preview_buffer: [256]u8 = undefined;
+            const page_preview_text_read_bytes = try page_fd.read(&preview_buffer);
+            const page_preview_text = preview_buffer[0..page_preview_text_read_bytes];
+            try writer.print(
+                \\ <div class="page-preview">
+                \\ 	<a href="{s}{s}">
+                \\ 		<div class="page-preview-title"><h2>{s}</h2></div>
+                \\ 		<div class="page-preview-text">{s}</div>
+                \\ 	</a>
+                \\ </div><p>
+            ,
+                .{
+                    build_file.config.webroot,
+                    page.web_path.?,
+                    util.unsafeHTML(page.title),
+                    util.unsafeHTML(page_preview_text),
+                },
             );
         }
+
+        try writer.print("</div>", .{});
+
+        _ = try writer.write(
+            \\  </main>
+        );
+
+        if (build_file.config.project_footer) {
+            _ = try writer.write(FOOTER);
+        }
+
+        _ = try writer.write(
+            \\  </body>
+            \\</html>
+        );
+    }
+}
+
+fn writeHead(writer: anytype, build_file: BuildFile, title: []const u8) !void {
+    try writer.print(
+        \\<!DOCTYPE html>
+        \\<html lang="en">
+        \\  <head>
+        \\    <meta charset="UTF-8">
+        \\    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        \\    <title>{s}</title>
+        \\    <script src="{s}/main.js"></script>
+        \\    <link rel="stylesheet" href="{s}/styles.css">
+        \\  </head>
+        \\  <body>
+        \\  <nav class="toc">
+    , .{ util.unsafeHTML(title), build_file.config.webroot, build_file.config.webroot });
+}
+
+// TODO make this usable on the main pipeline too?
+fn writeEmptyPage(writer: anytype, build_file: BuildFile) !void {
+    _ = try writer.write(
+        \\  </nav>
+        \\  <main class="text">
+        \\  </main>
+    );
+
+    if (build_file.config.project_footer) {
+        _ = try writer.write(FOOTER);
+    }
+
+    _ = try writer.write(
+        \\  </body>
+        \\</html>
+    );
+}
+
+fn createStaticResources() !void {
+    const RESOURCES = .{
+        .{ "resources/styles.css", "styles.css" },
+        .{ "resources/main.js", "main.js" },
+    };
+
+    inline for (RESOURCES) |resource| {
+        const resource_text = @embedFile(resource.@"0");
+
+        const output_fspath = "public/" ++ resource.@"1";
+
+        var output_fd = try std.fs.cwd().createFile(
+            output_fspath,
+            .{ .truncate = true },
+        );
+        defer output_fd.close();
+        // write it all lmao
+        const written_bytes = try output_fd.write(resource_text);
+        std.debug.assert(written_bytes == resource_text.len);
     }
 }
 
