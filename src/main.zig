@@ -816,7 +816,7 @@ fn generateTagPages(
                 \\ <div class="page-preview">
                 \\ 	<a href="{s}{s}">
                 \\ 		<div class="page-preview-title"><h2>{s}</h2></div>
-                \\ 		<div class="page-preview-text">{s}</div>
+                \\ 		<div class="page-preview-text">{s}&hellip;</div>
                 \\ 	</a>
                 \\ </div><p>
             ,
