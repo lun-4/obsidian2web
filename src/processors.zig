@@ -121,7 +121,6 @@ pub const TagProcessor = struct {
         // rather than doing it in code like this lmao
 
         const first_character = if (full_match.start == 0) ' ' else ctx.file_contents[full_match.start - 1];
-        logger.info("fristt char '{s}'", .{&[_]u8{first_character}});
         if (first_character != ' ' and first_character != '>') {
             return try result.writer().print("{s}", .{raw_text});
         }
@@ -132,7 +131,7 @@ pub const TagProcessor = struct {
         // tag index pages will be generated after processor finishes
         try ctx.current_page.tags.append(try ctx.allocator.dupe(u8, tag_name));
 
-        logger.info("tag: {s} {s}", .{ tag_text, tag_name });
+        logger.info("found tag: {s} {s}", .{ tag_text, tag_name });
         try result.writer().print(
             "{s}<a href=\"{s}/_/tags/{s}.html\">{s}</a>",
             .{

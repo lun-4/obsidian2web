@@ -815,6 +815,8 @@ fn generateTagPages(
             }
         }.inner);
 
+        try writer.print("<h1>{s}</h1><p>", .{safe_title});
+        try writer.print("({d} pages)", .{entry.value_ptr.items.len});
         try writer.print("<div class=\"tag-page\">", .{});
 
         for (entry.value_ptr.items) |page| {
