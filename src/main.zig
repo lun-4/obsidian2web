@@ -16,17 +16,129 @@ const PageBuildStatus = enum {
     Error,
 };
 
+const BuildMetadata = struct {
+    html_path: []const u8,
+    web_path: []const u8,
+    errors: []const u8,
+    tags: OwnedStringList,
+};
+
 const Page = struct {
+    ctx: *const Context,
     filesystem_path: []const u8,
     title: []const u8,
     ctime: i128,
-    // TODO change this to union(enum)
-    status: PageBuildStatus = .Unbuilt,
-    html_path: ?[]const u8 = null,
-    web_path: ?[]const u8 = null,
-    errors: ?[]const u8 = null,
-    tags: OwnedStringList,
+
+    build_metadata: ?BuildMetadata = null,
+
+    const Self = @This();
+
+    /// assumes given path is a ".md" file.
+    pub fn fromPath(ctx: *const Context, fspath: []const u8) !Self {
+        const title_raw = std.fs.path.basename(fspath);
+        const title = title_raw[0 .. title_raw.len - 3];
+        logger.info("new page title='{s}' % {s}", .{ title, fspath });
+        var stat = try std.fs.cwd().statFile(fspath);
+        return Self{
+            .ctx = ctx,
+            .filesystem_path = fspath,
+            .ctime = stat.ctime,
+            .title = title,
+        };
+    }
+
+    pub fn format(
+        self: Self,
+        comptime fmt: []const u8,
+        options: std.fmt.FormatOptions,
+        writer: anytype,
+    ) !void {
+        _ = fmt;
+        _ = options;
+        return writer.print("Page<path='{s}'>", .{self.filesystem_path});
+    }
+
+    pub fn relativePath(self: Self) []const u8 {
+        const relative_fspath = std.mem.trimLeft(
+            u8,
+            self.filesystem_path,
+            self.ctx.build_file.vault_path,
+        );
+        std.debug.assert(relative_fspath[0] != '/'); // must be relative
+        return relative_fspath;
+    }
+
+    pub fn fetchPublicPaths(
+        self: Self,
+        vault_path: []const u8,
+        allocator: std.mem.Allocator,
+    ) !Paths {
+        // output_path = relative_fspath with ".md" replaced to ".html"
+        var raw_output_path = try std.fs.path.resolve(
+            allocator,
+            &[_][]const u8{ "public", self.relativePath() },
+        );
+        defer allocator.free(raw_output_path);
+
+        const output_path = try replaceStrings(
+            allocator,
+            raw_output_path,
+            ".md",
+            ".html",
+        );
+
+        // to generate web_path, we need to:
+        //  - take html_path
+        //  - remove public/
+        //  - replace std.fs.path.sep to '/'
+        //  - Uri.escapeString
+
+        var trimmed_output_path = std.mem.trimLeft(
+            u8,
+            output_path,
+            "public" ++ std.fs.path.sep_str,
+        );
+
+        var trimmed_output_path_2 = try replaceStrings(
+            allocator,
+            trimmed_output_path,
+            std.fs.path.sep_str,
+            "/",
+        );
+        defer allocator.free(trimmed_output_path_2);
+
+        const web_path = try Uri.escapeString(allocator, trimmed_output_path_2);
+        return .{ .relative_web_path = web_path, .output_path = output_path };
+    }
 };
+
+/// Caller owns returned memory.
+fn replaceStrings(
+    allocator: std.mem.Allocator,
+    input: []const u8,
+    replace_from: []const u8,
+    replace_to: []const u8,
+) ![]const u8 {
+    const buffer_size = std.mem.replacementSize(
+        u8,
+        input,
+        replace_from,
+        replace_to,
+    );
+    var buffer = try allocator.alloc(u8, buffer_size);
+    const final_replacement_size = std.mem.replace(
+        u8,
+        input,
+        replace_from,
+        replace_to,
+        buffer,
+    );
+
+    // i'm going to be safe and use std.mem.replace's result, but
+    // it should always be the same to replacementSize's count, right?
+    std.debug.assert(final_replacement_size == size);
+    return try allocator.dupe(u8, buffer[0..final_replacement_size]);
+}
 
 const PageMap = std.StringHashMap(Page);
 
@@ -67,10 +179,12 @@ const PageTree = struct {
             .root = PageFolder.init(allocator),
         };
     }
+
     pub fn deinit(self: *Self) void {
         deinitPageFolder(&self.root);
     }
-    pub fn addPage(self: *Self, fspath: []const u8) !void {
+
+    pub fn addPath(self: *Self, fspath: []const u8) !void {
         const total_seps = std.mem.count(u8, fspath, sepstr);
         var path_it = std.mem.split(u8, fspath, sepstr);
 
@@ -97,31 +211,6 @@ const PageTree = struct {
     }
 };
 
-fn addFilePage(
-    pages: *PageMap,
-    titles: *TitleMap,
-    tree: *PageTree,
-    local_path: []const u8,
-    fspath: []const u8,
-    allocator: std.mem.Allocator,
-) !void {
-    if (!std.mem.endsWith(u8, local_path, ".md")) return;
-    std.log.info("new page: local='{s}' fs='{s}'", .{ local_path, fspath });
-
-    const title_raw = std.fs.path.basename(local_path);
-    const title = title_raw[0 .. title_raw.len - 3];
-    std.log.info("  title='{s}'", .{title});
-    try titles.put(title, local_path);
-
-    var stat = try std.fs.cwd().statFile(fspath);
-    try pages.put(local_path, Page{
-        .filesystem_path = fspath,
-        .ctime = stat.ctime,
-        .title = title,
-        .tags = OwnedStringList.init(allocator),
-    });
-    try tree.addPage(local_path);
-}
 pub const StringBuffer = std.ArrayList(u8);
 
 // TODO move to util
@@ -139,9 +228,10 @@ pub const ProcessorContext = struct {
 
 const Paths = struct {
     /// Path to given page in the web browser
-    web_path: []const u8,
-    /// Path to given page in the public/ folder
-    html_path: []const u8,
+    ///  (must be concatenated with webroot to be correct)
+    relative_web_path: []const u8,
+    /// Path to given page in the public/ folder (html)
+    output_path: []const u8,
 };
 
 fn to_hex_digit(digit: u8) u8 {
@@ -229,6 +319,8 @@ const lexicographicalCompare = struct {
         return a[i] < b[i];
     }
 }.inner;
+
+fn generatePageTreeHTML(writer: anytype, ctx: *const Context, tree_context: *TreeGeneratorContext) !void {}
 
 const TocContext = struct {
     current_relative_path: ?[]const u8 = null,
@@ -355,12 +447,262 @@ fn tocForPage(build_file: *BuildFile, pages: *PageMap, tree: *PageTree, current_
     defer toc_result.deinit();
 
     var toc_ctx: TocContext = .{};
-    try generateToc(&toc_result, build_file, pages, &tree.root.getPtr(".").?.dir, &toc_ctx, current_page);
+    try generateToc(
+        &toc_result,
+        build_file,
+        pages,
+        &tree.root.getPtr(".").?.dir,
+        &toc_ctx,
+        current_page,
+    );
 
     return try toc_result.toOwnedSlice();
 }
 
+pub const ArenaHolder = struct {
+    paths: std.heap.ArenaAllocator,
+    const Self = @This();
+
+    pub fn init(allocator: std.mem.Allocator) Self {
+        return Self{
+            .paths = std.heap.ArenaAllocator.init(allocator),
+        };
+    }
+
+    pub fn deinit(self: Self) void {
+        self.paths.deinit();
+    }
+};
+
+pub const Context = struct {
+    allocator: std.mem.Allocator,
+    build_file: BuildFile,
+    vault_dir: std.fs.Dir,
+    arenas: ArenaHolder,
+    pages: PageMap,
+    titles: TitleMap,
+    tree: PathTree,
+
+    const Self = @This();
+
+    pub fn init(
+        allocator: std.mem.Allocator,
+        build_file: BuildFile,
+        vault_dir: std.fs.Dir,
+    ) Self {
+        return Self{
+            .allocator = allocator,
+            .build_file = build_file,
+            .vault_dir = vault_dir,
+            .arenas = ArenaHolder.init(allocator),
+            .pages = PageMap.init(allocator),
+            .titles = TitleMap.init(allocator),
+            .tree = PathTree.init(allocator),
+        };
+    }
+
+    pub fn deinit(self: Self) void {
+        self.arenas.deinit();
+        self.pages.deinit();
+        self.titles.deinit();
+        self.tree.deinit();
+    }
+
+    pub fn addPage(self: *Self, path: []const u8) !void {
+        if (!std.mem.endsWith(u8, path, ".md")) return;
+
+        const owned_fspath = try self.arenas.path.allocator().dupe(u8, path);
+        var pages_result = self.pages.getOrPut(owned_fspath);
+        if (!pages_result.found_existing) {
+            var page = try Page.fromPath(self, owned_fspath);
+            pages_result.value_ptr.* = page;
+            try self.titles.put(page.title, page.fspath);
+            try self.tree.addPath(page.fspath);
+        }
+    }
+
+    pub fn pageFromPath(self: Self, path: []const u8) !?Page {
+        return self.pages.get(path);
+    }
+
+    pub fn pageFromTitle(self: Self, title: []const u8) !?Page {
+        return self.pages.get(self.titles.get(title));
+    }
+};
+
+fn iterateVaultPath(ctx: *Context) !void {
+    for (ctx.build_file.includes.items) |relative_include_path| {
+        const absolute_include_path = try std.fs.path.resolve(
+            ctx.allocator,
+            &[_][]const u8{ build_file.vault_path, relative_include_path },
+        );
+        defer allocator.free(absolute_include_path);
+
+        logger.info("including given path: '{s}'", .{absolute_include_path});
+
+        // attempt to openDir first, if it fails assume file
+        var included_dir = std.fs.cwd().openIterableDir(joined_path, .{}) catch |err| switch (err) {
+            error.NotDir => {
+                try ctx.addPage(absolute_include_path);
+                continue;
+            },
+
+            else => return err,
+        };
+        defer included_dir.close();
+
+        // Walker already recurses into all child paths
+
+        var walker = try included_dir.walk(alloc);
+        defer walker.deinit();
+
+        while (try walker.next()) |entry| {
+            switch (entry.kind) {
+                .File => {
+                    const aboslute_file_path = try std.fs.path.join(
+                        ctx.allocator,
+                        &[_][]const u8{ absolute_include_path, entry.path },
+                    );
+                    defer allocator.free(absolute_file_path);
+                    try ctx.addPage(absolute_file_path);
+                },
+
+                else => {},
+            }
+        }
+    }
+
+    return pages;
+}
+
 pub fn main() anyerror!void {
+    var allocator_instance = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = allocator_instance.deinit();
+
+    var allocator = allocator_instance.allocator();
+
+    var args_it = std.process.args();
+    defer args_it.deinit();
+
+    _ = args_it.skip();
+    const build_file_path = args_it.next() orelse {
+        logger.err("pass path to build file as 1st argument", .{});
+        return error.InvalidArguments;
+    };
+
+    var build_file_data_buffer: [8192]u8 = undefined;
+    const build_file_data = blk: {
+        const build_file_fd = try std.fs.cwd().openFile(
+            build_file_path,
+            .{ .mode = .read_only },
+        );
+        defer build_file_fd.close();
+
+        const build_file_data_count = try build_file_fd.read(
+            &build_file_data_buffer,
+        );
+        break :blk build_file_data_buffer[0..build_file_data_count];
+    };
+
+    var build_file = try BuildFile.parse(allocator, build_file_data);
+    defer build_file.deinit();
+
+    var vault_dir = try std.fs.cwd().openIterableDir(build_file.vault_path, .{});
+    defer vault_dir.close();
+
+    var ctx = Context.init(allocator, build_file, vault_dir);
+    defer ctx.deinit();
+
+    // main pipeline starts here
+    {
+        try iterateVaultPath(&ctx);
+        try std.fs.cwd().makePath("public/");
+        try createStaticResources();
+
+        // for each page
+        //  - pass 1: run markdown processors
+        //  - pass 2: turn markdown into html (koino)
+        //  - pass 3: turn html into html (html processors)
+
+        try ctx.initMarkdownProcessors();
+        var pages_it = ctx.pages.iterator();
+        while (pages_it.next()) |entry|
+            try markdownProcessorPass(&ctx, entry.value_ptr);
+    }
+}
+
+const MARKDOWN_PROCESSORS = .{
+    processors.TagProcessor,
+    processors.CrossPageLinkProcessor,
+};
+
+/// This pass will run markdown->markdown processors only
+fn markdownProcessorPass(ctx: *Context, page: *const Page) !void {
+    logger.info("pass 1: processing {}", .{page});
+
+    // as these transformers may generate content on top of the page
+    // (either markdown or html, i dont care), and we have multiple of them,
+    // create a temp file that contains those results
+
+    var markdown_output_path = fetchTemporaryMarkdownPath();
+
+    try std.fs.copyFileAbsolute(page.filesystem_path, markdown_output_path);
+
+    for (ctx.markdown_processors) |processor| {
+        var processor_page_ctx = processor.initPage();
+        defer processor_page_ctx.deinit();
+
+        const output_file_contents = blk: {
+            var output_fd = try std.fs.cwd().openFile(
+                markdown_output_path,
+                .{ .mode = .read_only },
+            );
+            defer output_fd.close();
+
+            break :blk try output_fd.reader().readAllAlloc(
+                ctx.allocator,
+                std.math.maxInt(usize),
+            );
+        };
+        defer ctx.allocator.free(output_file_contents);
+
+        // TODO understand this code
+
+        var regex_offset: usize = 0;
+        var last_match: ?libpcre.Capture = null;
+        while (true) {
+            const text_to_match_against = file_contents[regex_offset..];
+            var maybe_single_capture = try processor.regex.captures(
+                allocator,
+                text_to_match_against,
+                .{},
+            );
+            if (maybe_single_capture) |single_capture| {
+                const first_group = single_capture[0].?;
+
+                // convert from relative offsets to absolute file offsets
+                // for all captures described in the regex
+
+                for (single_capture, 0..) |maybe_group, idx| {
+                    if (maybe_group != null) {
+                        single_capture[idx].?.start += offset;
+                        single_capture[idx].?.end += offset;
+                    }
+                }
+
+                // call processor
+                last_match = match;
+                offset += first_group.end;
+            } else {
+                break;
+            }
+        }
+        return match_list;
+    }
+    page.state = .{ .markdown = temporary_markdown_output_path };
+}
+
+pub fn oldMain() anyerror!void {
     var allocator_instance = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = allocator_instance.deinit();
 
@@ -504,7 +846,7 @@ pub fn main() anyerror!void {
         );
         defer alloc.free(file_contents);
 
-        var p = try koino.parser.Parser.init(alloc, .{});
+        var p = try koino.parser.Parser.init(alloc, .{ .unsafe = true });
         defer p.deinit();
 
         // trying to feed 1k chunks or something is not taken well
