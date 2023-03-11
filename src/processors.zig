@@ -62,7 +62,7 @@ pub const CrossPageLinkProcessor = struct {
         const referenced_title = file_contents[match.start + 2 .. match.end - 2];
         logger.debug(
             "{s} has link to '{s}'",
-            .{ page.title, referenced_title },
+            .{ pctx.page.title, referenced_title },
         );
 
         var ctx = pctx.ctx;
@@ -139,7 +139,7 @@ pub const TagProcessor = struct {
         };
         try tags.append(try ctx.allocator.dupe(u8, tag_name));
 
-        logger.info("found tag: text='{s}' name='{s}'", .{ tag_text, tag_name });
+        logger.debug("found tag: text='{s}' name='{s}'", .{ tag_text, tag_name });
         try pctx.out.print(
             "{s}<a href=\"{}\">{s}</a>",
             .{

@@ -8,6 +8,10 @@ const BuildFile = @import("build_file.zig").BuildFile;
 const processors = @import("processors.zig");
 const util = @import("util.zig");
 
+pub const std_options = struct {
+    pub const log_level = .debug;
+};
+
 const logger = std.log.scoped(.obsidian2web);
 
 const PageBuildStatus = enum {
@@ -46,7 +50,7 @@ const Page = struct {
     pub fn fromPath(ctx: *const Context, fspath: []const u8) !Self {
         const title_raw = std.fs.path.basename(fspath);
         const title = title_raw[0 .. title_raw.len - 3];
-        logger.info("new page title='{s}' % {s}", .{ title, fspath });
+        logger.info("create page with title '{s}' @ {s}", .{ title, fspath });
         var stat = try std.fs.cwd().statFile(fspath);
         return Self{
             .ctx = ctx,
@@ -1149,5 +1153,5 @@ fn createStaticResources() !void {
 }
 
 test "basic test" {
-    // _ = std.testing.refAllDecls(@This());
+    _ = std.testing.refAllDecls(@This());
 }
