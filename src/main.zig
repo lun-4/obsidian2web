@@ -637,6 +637,10 @@ pub fn main() anyerror!void {
         //  - pass 2: turn markdown into html (koino)
         //  - pass 3: turn html into html (html processors)
 
+        // todo rename this to pass1 processors. theyre not really
+        // markdown2markdown, they still spit html.
+        //
+        // its just that their info might be important to the main html pass
         var markdown_processors = try initMarkdownProcessors();
         var pages_it = ctx.pages.iterator();
         while (pages_it.next()) |entry|
@@ -682,7 +686,13 @@ fn markdownProcessorPass(
     var markdown_output_path = "amogus.md"; // fetchTemporaryMarkdownPath();
     defer page.state = .{ .markdown = markdown_output_path };
 
-    try std.fs.copyFileAbsolute(page.filesystem_path, markdown_output_path, .{});
+    try std.fs.Dir.copyFile(
+        std.fs.cwd(),
+        page.filesystem_path,
+        std.fs.cwd(),
+        markdown_output_path,
+        .{},
+    );
 
     inline for (@typeInfo(MarkdownProcessors).Struct.fields) |field| {
         var processor = @field(markdown_processors, field.name);
@@ -750,6 +760,24 @@ fn markdownProcessorPass(
                 }
             }.inner,
         );
+
+        _ = if (last_capture == null)
+            try result.writer().write(
+                output_file_contents[0..output_file_contents.len],
+            )
+        else
+            try result.writer().write(
+                output_file_contents[last_capture.?.end..output_file_contents.len],
+            );
+
+        {
+            var output_fd = try std.fs.cwd().openFile(
+                markdown_output_path,
+                .{ .mode = .write_only },
+            );
+            defer output_fd.close();
+            _ = try output_fd.write(result.items);
+        }
     }
 }
 
