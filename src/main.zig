@@ -23,7 +23,9 @@ const BuildMetadata = struct {
 };
 
 const PageState = union(enum) {
-    markdown: []const u8,
+    unbuilt: void,
+    pre: []const u8,
+    main: void,
 };
 
 const Page = struct {
@@ -33,7 +35,7 @@ const Page = struct {
     ctime: i128,
 
     tags: ?OwnedStringList = null,
-    state: ?PageState = null,
+    state: PageState = .{ .unbuilt = {} },
 
     //build_metadata: ?BuildMetadata = null,
 
@@ -81,23 +83,28 @@ const Page = struct {
         return relative_fspath;
     }
 
-    pub fn fetchPublicPaths(
-        self: Self,
-        allocator: std.mem.Allocator,
-    ) !Paths {
+    pub fn fetchHtmlPath(self: Self, allocator: std.mem.Allocator) ![]const u8 {
         // output_path = relative_fspath with ".md" replaced to ".html"
+
         var raw_output_path = try std.fs.path.resolve(
             allocator,
             &[_][]const u8{ "public", self.relativePath() },
         );
         defer allocator.free(raw_output_path);
 
-        const output_path = try replaceStrings(
+        return try replaceStrings(
             allocator,
             raw_output_path,
             ".md",
             ".html",
         );
+    }
+
+    pub fn fetchPublicPaths(
+        self: Self,
+        allocator: std.mem.Allocator,
+    ) !Paths {
+        const output_path = try self.fetchHtmlPath(allocator);
 
         // to generate web_path, we need to:
         //  - take html_path
@@ -138,7 +145,7 @@ fn replaceStrings(
         replace_to,
     );
     var buffer = try allocator.alloc(u8, buffer_size);
-    const final_replacement_size = std.mem.replace(
+    _ = std.mem.replace(
         u8,
         input,
         replace_from,
@@ -146,10 +153,7 @@ fn replaceStrings(
         buffer,
     );
 
-    // i'm going to be safe and use std.mem.replace's result, but
-    // it should always be the same to replacementSize's count, right?
-    std.debug.assert(final_replacement_size == buffer_size);
-    return try allocator.dupe(u8, buffer[0..final_replacement_size]);
+    return buffer;
 }
 
 const PageMap = std.StringHashMap(Page);
@@ -633,18 +637,18 @@ pub fn main() anyerror!void {
         try createStaticResources();
 
         // for each page
-        //  - pass 1: run markdown processors
+        //  - pass 1: run pre processors (markdown to html)
         //  - pass 2: turn markdown into html (koino)
-        //  - pass 3: turn html into html (html processors)
+        //  - pass 3: run post processors
 
-        // todo rename this to pass1 processors. theyre not really
-        // markdown2markdown, they still spit html.
-        //
-        // its just that their info might be important to the main html pass
+        // TODO rename markdown processors to pre processors.
         var markdown_processors = try initMarkdownProcessors();
         var pages_it = ctx.pages.iterator();
-        while (pages_it.next()) |entry|
+        while (pages_it.next()) |entry| {
             try markdownProcessorPass(&ctx, &markdown_processors, entry.value_ptr);
+            try mainPass(&ctx, entry.value_ptr);
+            //try postProcessingPass(&ctx, &post_processors, entry.value_ptr);
+        }
     }
 }
 
@@ -671,7 +675,7 @@ fn Holder(comptime ProcessorT: type, comptime WriterT: type) type {
     };
 }
 
-/// This pass will run markdown->markdown processors only
+/// This pass will run pre processors only
 fn markdownProcessorPass(
     ctx: *Context,
     markdown_processors: anytype,
@@ -683,8 +687,8 @@ fn markdownProcessorPass(
     // (either markdown or html, i dont care), and we have multiple of them,
     // create a temp file that contains those results
 
-    var markdown_output_path = "amogus.md"; // fetchTemporaryMarkdownPath();
-    defer page.state = .{ .markdown = markdown_output_path };
+    var markdown_output_path = "/tmp/sex.md"; // fetchTemporaryMarkdownPath();
+    defer page.state = .{ .pre = markdown_output_path };
 
     try std.fs.Dir.copyFile(
         std.fs.cwd(),
@@ -778,6 +782,89 @@ fn markdownProcessorPass(
             defer output_fd.close();
             _ = try output_fd.write(result.items);
         }
+    }
+}
+
+fn mainPass(ctx: *Context, page: *Page) !void {
+    logger.info("processing '{s}'", .{page.filesystem_path});
+
+    // TODO find a way to feed chunks of file to koino
+    //
+    // i did that before and failed miserably...
+    const input_page_contents = blk: {
+        var page_fd = try std.fs.cwd().openFile(
+            page.state.pre,
+            .{ .mode = .read_only },
+        );
+        defer page_fd.close();
+
+        break :blk try page_fd.reader().readAllAlloc(
+            ctx.allocator,
+            std.math.maxInt(usize),
+        );
+    };
+    defer ctx.allocator.free(input_page_contents);
+
+    var parser = try koino.parser.Parser.init(
+        ctx.allocator,
+        .{},
+    );
+    defer parser.deinit();
+
+    try parser.feed(input_page_contents);
+
+    var doc = try parser.finish();
+    defer doc.deinit();
+
+    // TODO maybe we can just open output file as write only here?
+
+    var result = ByteList.init(ctx.allocator);
+    defer result.deinit();
+    var output = result.writer();
+
+    // write time
+    {
+        try writeHead(output, ctx.build_file, page.title);
+        // try writePageTree(output, ctx, page);
+        try output.print(
+            \\  </nav>
+            \\  <main class="text">
+        , .{});
+        try output.print(
+            \\    <h2>{s}</h2><p>
+        , .{util.unsafeHTML(page.title)});
+        try koino.html.print(
+            output,
+            ctx.allocator,
+            .{ .render = .{ .hard_breaks = true, .unsafe = true } },
+            doc,
+        );
+
+        try output.print(
+            \\  </p></main>
+            \\ {s}
+            \\ </body>
+            \\ </html>
+        , .{if (ctx.build_file.config.project_footer) FOOTER else ""});
+    }
+
+    // write all we got to file
+    {
+        var html_path = try page.fetchHtmlPath(ctx.allocator);
+        defer ctx.allocator.free(html_path);
+        logger.info("writing to '{s}'", .{html_path});
+
+        const leading_path_to_file = std.fs.path.dirname(html_path).?;
+        try std.fs.cwd().makePath(leading_path_to_file);
+
+        var output_fd = try std.fs.cwd().createFile(
+            html_path,
+            .{ .read = false, .truncate = true },
+        );
+        defer output_fd.close();
+        _ = try output_fd.write(result.items);
+
+        page.state = .{ .main = {} };
     }
 }
 
