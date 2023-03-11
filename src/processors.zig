@@ -6,21 +6,32 @@ const StringBuffer = root.StringBuffer;
 const logger = std.log.scoped(.obsidian2web_processors);
 const util = @import("util.zig");
 
+/// Wrap checkmarks in <code> HTML blocks.
 pub const CheckmarkProcessor = struct {
     regex: libpcre.Regex,
 
+    const REGEX = "\\[.\\]";
     const Self = @This();
 
-    pub fn deinit(self: *Self) void {
+    pub fn init() !Self {
+        return Self{ .regex = try libpcre.Regex.compile(REGEX, .{}) };
+    }
+
+    pub fn deinit(self: Self) void {
         self.regex.deinit();
     }
 
-    // TODO change from *StringBuffer to `anytype` writer.
-    pub fn handle(self: *Self, ctx: ProcessorContext, result: *StringBuffer) !void {
+    pub fn handle(
+        self: Self,
+        /// Processor context. `pctx.ctx` gives Context
+        pctx: anytype,
+        file_contents: []const u8,
+        captures: []?libpcre.Capture,
+    ) !void {
         _ = self;
-        const match = ctx.captures[0].?;
-        const check = ctx.file_contents[match.start..match.end];
-        try result.writer().print("<code>{s}</code>", .{check});
+        const match = captures[0].?;
+        const check = file_contents[match.start..match.end];
+        try pctx.out.print("<code>{s}</code>", .{check});
     }
 };
 

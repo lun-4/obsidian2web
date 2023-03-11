@@ -26,6 +26,7 @@ const PageState = union(enum) {
     unbuilt: void,
     pre: []const u8,
     main: void,
+    post: void,
 };
 
 const Page = struct {
@@ -642,27 +643,42 @@ pub fn main() anyerror!void {
         //  - pass 3: run post processors
 
         // TODO rename markdown processors to pre processors.
-        var markdown_processors = try initMarkdownProcessors();
+        var markdown_processors = try initProcessors(MarkdownProcessors);
+        defer deinitProcessors(markdown_processors);
+
+        var post_processors = try initProcessors(PostProcessors);
+        defer deinitProcessors(post_processors);
+
         var pages_it = ctx.pages.iterator();
         while (pages_it.next()) |entry| {
             try markdownProcessorPass(&ctx, &markdown_processors, entry.value_ptr);
             try mainPass(&ctx, entry.value_ptr);
-            //try postProcessingPass(&ctx, &post_processors, entry.value_ptr);
+            try postProcessorPass(&ctx, &post_processors, entry.value_ptr);
         }
     }
 }
+
+const PostProcessors = struct {
+    checkmark: processors.CheckmarkProcessor,
+};
 
 const MarkdownProcessors = struct {
     tag: processors.TagProcessor,
     //  processors.CrossPageLinkProcessor,
 };
 
-fn initMarkdownProcessors() !MarkdownProcessors {
-    var markdown_processors: MarkdownProcessors = undefined;
-    inline for (@typeInfo(MarkdownProcessors).Struct.fields) |field| {
-        @field(markdown_processors, field.name) = try field.type.init();
+fn initProcessors(comptime ProcessorHolderT: type) !ProcessorHolderT {
+    var proc: ProcessorHolderT = undefined;
+    inline for (@typeInfo(ProcessorHolderT).Struct.fields) |field| {
+        @field(proc, field.name) = try field.type.init();
     }
-    return markdown_processors;
+    return proc;
+}
+
+fn deinitProcessors(procs: anytype) void {
+    inline for (@typeInfo(@TypeOf(procs)).Struct.fields) |field| {
+        field.type.deinit(@field(procs, field.name));
+    }
 }
 
 fn Holder(comptime ProcessorT: type, comptime WriterT: type) type {
@@ -865,6 +881,104 @@ fn mainPass(ctx: *Context, page: *Page) !void {
         _ = try output_fd.write(result.items);
 
         page.state = .{ .main = {} };
+    }
+}
+
+fn postProcessorPass(
+    ctx: *Context,
+    procs: anytype,
+    page: *Page,
+) !void {
+    logger.info("post: processing {}", .{page});
+
+    std.debug.assert(page.state == .main);
+    defer page.state = .{ .post = {} };
+
+    var html_path = try page.fetchHtmlPath(ctx.allocator);
+    defer ctx.allocator.free(html_path);
+
+    inline for (@typeInfo(@typeInfo(@TypeOf(procs)).Pointer.child).Struct.fields) |field| {
+        var processor = @field(procs, field.name);
+        logger.info("running {s} in {}", .{ field.name, page });
+
+        const output_file_contents = blk: {
+            var output_fd = try std.fs.cwd().openFile(
+                html_path,
+                .{ .mode = .read_only },
+            );
+            defer output_fd.close();
+
+            break :blk try output_fd.reader().readAllAlloc(
+                ctx.allocator,
+                std.math.maxInt(usize),
+            );
+        };
+        defer ctx.allocator.free(output_file_contents);
+
+        var result = ByteList.init(ctx.allocator);
+        defer result.deinit();
+
+        const HolderT = Holder(@TypeOf(processor), ByteList.Writer);
+
+        var last_capture: ?libpcre.Capture = null;
+        var context_holder = HolderT{
+            .ctx = ctx,
+            .processor = processor,
+            .page = page,
+            .last_capture = &last_capture,
+            .out = result.writer(),
+        };
+
+        try util.captureWithCallback(
+            processor.regex,
+            output_file_contents,
+            .{},
+            ctx.allocator,
+            HolderT,
+            &context_holder,
+            struct {
+                fn inner(
+                    holder: *HolderT,
+                    full_string: []const u8,
+                    capture: []?libpcre.Capture,
+                ) !void {
+                    const first_group = capture[0].?;
+                    _ = if (holder.last_capture.* == null)
+                        try holder.out.write(
+                            full_string[0..first_group.start],
+                        )
+                    else
+                        try holder.out.write(
+                            full_string[holder.last_capture.*.?.end..first_group.start],
+                        );
+
+                    try holder.processor.handle(
+                        holder,
+                        full_string,
+                        capture,
+                    );
+                    holder.last_capture.* = first_group;
+                }
+            }.inner,
+        );
+
+        _ = if (last_capture == null)
+            try result.writer().write(
+                output_file_contents[0..output_file_contents.len],
+            )
+        else
+            try result.writer().write(
+                output_file_contents[last_capture.?.end..output_file_contents.len],
+            );
+
+        {
+            var output_fd = try std.fs.cwd().openFile(
+                html_path,
+                .{ .mode = .write_only },
+            );
+            defer output_fd.close();
+            _ = try output_fd.write(result.items);
+        }
     }
 }
 
