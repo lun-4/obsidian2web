@@ -133,13 +133,13 @@ pub const TagProcessor = struct {
         const tag_name = tag_text[1..];
 
         // tag index pages will be generated after processor finishes
-        var tags = if (pctx.page.tags) |tags| tags else blk: {
+        var tags = if (pctx.page.tags) |*tags| tags else blk: {
             pctx.page.tags = root.OwnedStringList.init(ctx.allocator);
-            break :blk pctx.page.tags.?;
+            break :blk &pctx.page.tags.?;
         };
         try tags.append(try ctx.allocator.dupe(u8, tag_name));
 
-        logger.info("found tag: {s} {s}", .{ tag_text, tag_name });
+        logger.info("found tag: text='{s}' name='{s}'", .{ tag_text, tag_name });
         try pctx.out.print(
             "{s}<a href=\"{}\">{s}</a>",
             .{
