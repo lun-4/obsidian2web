@@ -35,31 +35,47 @@ pub const CheckmarkProcessor = struct {
     }
 };
 
-pub const LinkProcessor = struct {
+pub const CrossPageLinkProcessor = struct {
+    const REGEX = "\\[\\[.+\\]\\]";
+
     regex: libpcre.Regex,
 
     const Self = @This();
 
-    pub fn deinit(self: *Self) void {
+    pub fn init() !Self {
+        return Self{ .regex = try libpcre.Regex.compile(REGEX, .{}) };
+    }
+
+    pub fn deinit(self: Self) void {
         self.regex.deinit();
     }
 
-    pub fn handle(self: *Self, ctx: ProcessorContext, result: *StringBuffer) !void {
+    pub fn handle(
+        self: Self,
+        /// Processor context. `pctx.ctx` gives Context
+        pctx: anytype,
+        file_contents: []const u8,
+        captures: []?libpcre.Capture,
+    ) !void {
         _ = self;
-        const match = ctx.captures[0].?;
+        const match = captures[0].?;
+        const referenced_title = file_contents[match.start + 2 .. match.end - 2];
+        logger.debug(
+            "{s} has link to '{s}'",
+            .{ page.title, referenced_title },
+        );
 
-        logger.info("match {} {}", .{ match.start, match.end });
-        const referenced_title = ctx.file_contents[match.start + 2 .. match.end - 2];
-        logger.info("link to '{s}'", .{referenced_title});
+        var ctx = pctx.ctx;
 
         var maybe_page_local_path = ctx.titles.get(referenced_title);
         if (maybe_page_local_path) |page_local_path| {
-            var page = ctx.pages.get(page_local_path).?;
-            try result.writer().print(
-                "<a href=\"{s}/{?s}\">{s}</a>",
+            var referenced_page = ctx.pages.get(page_local_path).?;
+            var web_path = try referenced_page.fetchWebPath(pctx.ctx.allocator);
+            defer pctx.ctx.allocator.free(web_path);
+            try pctx.out.print(
+                "<a href=\"{}\">{s}</a>",
                 .{
-                    ctx.build_file.config.webroot,
-                    page.web_path,
+                    ctx.webPath("/{s}", .{web_path}),
                     util.unsafeHTML(referenced_title),
                 },
             );
@@ -67,40 +83,13 @@ pub const LinkProcessor = struct {
             if (ctx.build_file.config.strict_links) {
                 logger.err(
                     "file '{s}' has link to file '{s}' which is not included!",
-                    .{ ctx.current_html_path, referenced_title },
+                    .{ pctx.page, referenced_title },
                 );
                 return error.InvalidLinksFound;
             } else {
-                try result.writer().print("[[{s}]]", .{referenced_title});
+                try pctx.out.print("[[{s}]]", .{referenced_title});
             }
         }
-    }
-};
-
-pub const WebLinkProcessor = struct {
-    regex: libpcre.Regex,
-
-    const Self = @This();
-
-    pub fn deinit(self: *Self) void {
-        self.regex.deinit();
-    }
-
-    pub fn handle(self: *Self, ctx: ProcessorContext, result: *StringBuffer) !void {
-        _ = self;
-        const full_match = ctx.captures[0].?;
-        const first_character = ctx.file_contents[full_match.start .. full_match.start + 1];
-
-        const match = ctx.captures[1].?;
-
-        logger.info("link match {} {}", .{ match.start, match.end });
-        const web_link = ctx.file_contents[match.start..match.end];
-        logger.info("text web link to '{s}' (first char '{s}')", .{ web_link, first_character });
-
-        try result.writer().print(
-            "{s}<a href=\"{s}\">{s}</a>",
-            .{ first_character, web_link, util.unsafeHTML(web_link) },
-        );
     }
 };
 

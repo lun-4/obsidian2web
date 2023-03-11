@@ -101,11 +101,12 @@ const Page = struct {
         );
     }
 
-    pub fn fetchPublicPaths(
+    pub fn fetchWebPath(
         self: Self,
         allocator: std.mem.Allocator,
-    ) !Paths {
+    ) ![]const u8 {
         const output_path = try self.fetchHtmlPath(allocator);
+        defer allocator.free(output_path);
 
         // to generate web_path, we need to:
         //  - take html_path
@@ -128,7 +129,7 @@ const Page = struct {
         defer allocator.free(trimmed_output_path_2);
 
         const web_path = try std.Uri.escapeString(allocator, trimmed_output_path_2);
-        return .{ .relative_web_path = web_path, .output_path = output_path };
+        return web_path;
     }
 };
 
@@ -660,11 +661,11 @@ pub fn main() anyerror!void {
 
 const PostProcessors = struct {
     checkmark: processors.CheckmarkProcessor,
+    cross_page_link: processors.CrossPageLinkProcessor,
 };
 
 const MarkdownProcessors = struct {
     tag: processors.TagProcessor,
-    //  processors.CrossPageLinkProcessor,
 };
 
 fn initProcessors(comptime ProcessorHolderT: type) !ProcessorHolderT {
@@ -821,10 +822,12 @@ fn mainPass(ctx: *Context, page: *Page) !void {
     };
     defer ctx.allocator.free(input_page_contents);
 
-    var parser = try koino.parser.Parser.init(
-        ctx.allocator,
-        .{},
-    );
+    const options = .{
+        .extensions = .{ .autolink = true, .strikethrough = true },
+        .render = .{ .hard_breaks = true, .unsafe = true },
+    };
+
+    var parser = try koino.parser.Parser.init(ctx.allocator, options);
     defer parser.deinit();
 
     try parser.feed(input_page_contents);
@@ -849,12 +852,7 @@ fn mainPass(ctx: *Context, page: *Page) !void {
         try output.print(
             \\    <h2>{s}</h2><p>
         , .{util.unsafeHTML(page.title)});
-        try koino.html.print(
-            output,
-            ctx.allocator,
-            .{ .render = .{ .hard_breaks = true, .unsafe = true } },
-            doc,
-        );
+        try koino.html.print(output, ctx.allocator, options, doc);
 
         try output.print(
             \\  </p></main>
