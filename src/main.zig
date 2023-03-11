@@ -493,6 +493,10 @@ pub const Context = struct {
 
     pub fn deinit(self: *Self) void {
         self.arenas.deinit();
+        {
+            var it = self.pages.iterator();
+            while (it.next()) |entry| entry.value_ptr.deinit();
+        }
         self.pages.deinit();
         self.titles.deinit();
         self.tree.deinit();
