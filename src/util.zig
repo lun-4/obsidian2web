@@ -1,4 +1,6 @@
 const std = @import("std");
+const libpcre = @import("libpcre");
+const main = @import("root");
 
 pub fn unsafeHTML(data: []const u8) UnsafeHTMLPrinter {
     return UnsafeHTMLPrinter{ .data = data };
@@ -33,4 +35,73 @@ fn encodeForHTML(writer: anytype, in: []const u8) !void {
             else => try writer.writeByte(char),
         };
     }
+}
+
+pub const MatchList = std.ArrayList([]?libpcre.Capture);
+
+pub fn captureWithCallback(
+    regex: libpcre.Regex,
+    full_string: []const u8,
+    options: libpcre.Options,
+    allocator: std.mem.Allocator,
+    comptime ContextT: type,
+    ctx: *ContextT,
+    comptime callback: fn (
+        ctx: *ContextT,
+        full_string: []const u8,
+        capture: []?libpcre.Capture,
+    ) anyerror!void,
+) anyerror!void {
+    var offset: usize = 0;
+
+    var match_list = MatchList.init(allocator);
+    errdefer match_list.deinit();
+    while (true) {
+        var maybe_single_capture = try regex.captures(
+            allocator,
+            full_string[offset..],
+            options,
+        );
+        if (maybe_single_capture) |single_capture| {
+            defer allocator.free(single_capture);
+
+            const first_group = single_capture[0].?;
+            for (single_capture, 0..) |maybe_group, idx| {
+                if (maybe_group != null) {
+                    // convert from relative offsets to absolute file offsets
+                    single_capture[idx].?.start += offset;
+                    single_capture[idx].?.end += offset;
+                }
+            }
+
+            try callback(ctx, full_string, single_capture);
+            offset += first_group.end;
+        } else {
+            break;
+        }
+    }
+}
+
+pub fn WebPathPrinter(comptime ArgsT: anytype, comptime fmt: []const u8) type {
+    return struct {
+        ctx: main.Context,
+        comptime innerFmt: []const u8 = fmt,
+        args: ArgsT,
+
+        const Self = @This();
+
+        pub fn format(
+            self: Self,
+            comptime outerFmt: []const u8,
+            options: std.fmt.FormatOptions,
+            writer: anytype,
+        ) !void {
+            _ = outerFmt;
+            _ = options;
+            try std.fmt.format(writer, "{s}", .{
+                self.ctx.build_file.config.webroot,
+            });
+            try std.fmt.format(writer, self.innerFmt, self.args);
+        }
+    };
 }
