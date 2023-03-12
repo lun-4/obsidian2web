@@ -316,7 +316,7 @@ pub fn main() anyerror!void {
     {
         try iterateVaultPath(&ctx);
         try std.fs.cwd().makePath("public/");
-        try createStaticResources();
+        try createStaticResources(ctx);
 
         // for each page
         //  - pass 1: run pre processors
@@ -757,7 +757,7 @@ fn writeEmptyPage(writer: anytype, build_file: BuildFile) !void {
     );
 }
 
-fn createStaticResources() !void {
+fn createStaticResources(ctx: Context) !void {
     const RESOURCES = .{
         .{ "resources/styles.css", "styles.css" },
         .{ "resources/main.js", "main.js" },
@@ -765,17 +765,29 @@ fn createStaticResources() !void {
 
     inline for (RESOURCES) |resource| {
         const resource_text = @embedFile(resource.@"0");
+        const resource_filename = resource.@"1";
+        const output_fspath = "public/" ++ resource_filename;
 
-        const output_fspath = "public/" ++ resource.@"1";
-
-        var output_fd = try std.fs.cwd().createFile(
-            output_fspath,
-            .{ .truncate = true },
-        );
-        defer output_fd.close();
-        // write it all lmao
-        const written_bytes = try output_fd.write(resource_text);
-        std.debug.assert(written_bytes == resource_text.len);
+        if (std.mem.eql(u8, resource_filename, "styles.css") and
+            ctx.build_file.config.custom_css != null)
+        {
+            try std.fs.Dir.copyFile(
+                std.fs.cwd(),
+                ctx.build_file.config.custom_css.?,
+                std.fs.cwd(),
+                output_fspath,
+                .{},
+            );
+        } else {
+            var output_fd = try std.fs.cwd().createFile(
+                output_fspath,
+                .{ .truncate = true },
+            );
+            defer output_fd.close();
+            // write it all lmao
+            const written_bytes = try output_fd.write(resource_text);
+            std.debug.assert(written_bytes == resource_text.len);
+        }
     }
 }
 
