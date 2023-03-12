@@ -521,8 +521,6 @@ fn mainPass(ctx: *Context, page: *Page) !void {
     var doc = try parser.finish();
     defer doc.deinit();
 
-    // TODO maybe we can just open output file as write only here?
-
     var output_fd = blk: {
         var html_path = try page.fetchHtmlPath(ctx.allocator);
         defer ctx.allocator.free(html_path);
