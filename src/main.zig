@@ -189,6 +189,18 @@ fn deinitPageFolder(folder: *PageFolder) void {
 
 const sepstr = &[_]u8{std.fs.path.sep};
 
+fn walkToDir(from: PageFolder, to: []const u8) PageFolder {
+    printHashMap(from);
+
+    logger.debug("walking to {s}", .{to});
+    var it = std.mem.split(u8, to, std.fs.path.sep_str);
+    const component = it.next().?;
+    _ = it.next() orelse return from;
+    logger.debug("component is {s}", .{component});
+
+    return walkToDir(from.get(component).?.dir, to[component.len + 1 ..]);
+}
+
 // TODO rename to PathTree
 const PageTree = struct {
     allocator: std.mem.Allocator,
@@ -343,15 +355,108 @@ const lexicographicalCompare = struct {
     }
 }.inner;
 
-fn generatePageTreeHTML(
+const TreeGeneratorContext = struct {
+    current_folder: ?PageFolder = null,
+    root_folder: ?PageFolder = null,
+    indentation_level: usize = 0,
+};
+
+fn printHashMap(map: anytype) void {
+    var it = map.iterator();
+    while (it.next()) |entry| {
+        logger.debug(
+            "key={s} value={any}",
+            .{ entry.key_ptr.*, entry.value_ptr.* },
+        );
+    }
+}
+
+fn writePageTree(
     writer: anytype,
     ctx: *const Context,
-    // TODO TreeGeneratorContext
-    tree_context: void,
+    tree_context: TreeGeneratorContext,
+    /// Set this if generating a tree in a specific page.
+    ///
+    /// Set to null if on index page.
+    generating_tree_for: ?*const Page,
 ) !void {
-    _ = writer;
-    _ = ctx;
-    _ = tree_context;
+    const root_folder =
+        tree_context.root_folder orelse ctx.tree.root.getPtr("").?.dir;
+    const current_folder =
+        tree_context.current_folder orelse root_folder;
+
+    // step 1: find all the folders at this level.
+
+    var folders = SliceList.init(ctx.allocator);
+    defer folders.deinit();
+
+    var files = SliceList.init(ctx.allocator);
+    defer files.deinit();
+
+    {
+        var folder_iterator = current_folder.iterator();
+
+        while (folder_iterator.next()) |entry| {
+            switch (entry.value_ptr.*) {
+                .dir => try folders.append(entry.key_ptr.*),
+                .file => try files.append(entry.key_ptr.*),
+            }
+        }
+
+        std.sort.sort([]const u8, folders.items, {}, lexicographicalCompare);
+        std.sort.sort([]const u8, files.items, {}, lexicographicalCompare);
+    }
+
+    // draw folders first (they recurse)
+    // then draw files second
+
+    for (folders.items) |folder_name| {
+        try writer.print("<details>", .{});
+
+        const child_folder = current_folder.getPtr(folder_name).?.dir;
+        try writer.print(
+            "<summary>{s}</summary>\n",
+            .{util.unsafeHTML(folder_name)},
+        );
+
+        var child_context = TreeGeneratorContext{
+            .indentation_level = tree_context.indentation_level + 1,
+            .current_folder = child_folder,
+        };
+
+        try writePageTree(writer, ctx, child_context, generating_tree_for);
+        try writer.print("</details>\n", .{});
+    }
+
+    const for_web_path = if (generating_tree_for) |current_page|
+        try current_page.fetchWebPath(ctx.allocator)
+    else
+        null;
+    defer if (for_web_path) |path| ctx.allocator.free(path);
+
+    try writer.print("<ul>\n", .{});
+    for (files.items) |file_name| {
+        const file_path = current_folder.get(file_name).?.file;
+        const page = ctx.pages.get(file_path).?;
+
+        const page_web_path = try page.fetchWebPath(ctx.allocator);
+        defer ctx.allocator.free(page_web_path);
+
+        const current_attr = if (for_web_path != null and std.mem.eql(u8, for_web_path.?, page_web_path))
+            "aria-current=\"page\" "
+        else
+            " ";
+
+        try writer.print(
+            "<li><a class=\"toc-link\" {s}href=\"{s}\">{s}</a></li>\n",
+            .{
+                current_attr,
+                ctx.webPath("/{s}", .{util.unsafeHTML(page_web_path)}),
+                util.unsafeHTML(page.title),
+            },
+        );
+    }
+    try writer.print("</ul>\n", .{});
 }
 
 const TocContext = struct {
@@ -848,7 +953,10 @@ fn mainPass(ctx: *Context, page: *Page) !void {
     // write time
     {
         try writeHead(output, ctx.build_file, page.title);
-        // try writePageTree(output, ctx, page);
+
+        try writePageTree(output, ctx, .{
+            .root_folder = walkToDir(ctx.tree.root, ctx.build_file.vault_path),
+        }, page);
         try output.print(
             \\  </nav>
             \\  <main class="text">
