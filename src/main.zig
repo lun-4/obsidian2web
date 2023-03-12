@@ -575,6 +575,52 @@ pub fn main() anyerror!void {
             try postProcessorPass(&ctx, &post_processors, entry.value_ptr);
         }
     }
+
+    // generate index page
+    {
+        // if an index file was provided in the config, copypaste the resulting
+        // HTML as that'll work
+        if (build_file.config.index) |relative_index_path| {
+            const page_path = try std.fs.path.resolve(
+                ctx.allocator,
+                &[_][]const u8{ ctx.build_file.vault_path, relative_index_path },
+            );
+            defer ctx.allocator.free(page_path);
+            const page =
+                ctx.pages.get(page_path) orelse return error.IndexPageNotFound;
+
+            const html_path = try page.fetchHtmlPath(ctx.allocator);
+            defer ctx.allocator.free(html_path);
+
+            try std.fs.Dir.copyFile(
+                std.fs.cwd(),
+                html_path,
+                std.fs.cwd(),
+                "public/index.html",
+                .{},
+            );
+        } else {
+            // if not, generate our own empty file
+            // that contains just the table of contents
+
+            const index_out_fd = try std.fs.cwd().createFile(
+                "public/index.html",
+                .{ .truncate = true },
+            );
+            defer index_out_fd.close();
+
+            const writer = index_out_fd.writer();
+
+            try writeHead(writer, build_file, "Index Page");
+            try writePageTree(writer, &ctx, .{
+                .root_folder = walkToDir(ctx.tree.root, ctx.build_file.vault_path),
+            }, null);
+            try writeEmptyPage(writer, build_file);
+        }
+    }
+
+    // TODO use ctx without of allocator, build_file, pages
+    try generateTagPages(&ctx, ctx.allocator, ctx.build_file, ctx.pages);
 }
 
 const PostProcessors = struct {
@@ -904,6 +950,7 @@ fn postProcessorPass(
 const PageList = std.ArrayList(*const Page);
 
 fn generateTagPages(
+    ctx: *const Context,
     allocator: std.mem.Allocator,
     build_file: BuildFile,
     pages: PageMap,
@@ -919,7 +966,9 @@ fn generateTagPages(
     var it = pages.iterator();
     while (it.next()) |entry| {
         var page = entry.value_ptr;
-        for (page.tags.items) |tag| {
+        logger.debug("processing tags in {}", .{page});
+
+        if (page.tags) |tags| for (tags.items) |tag| {
             var maybe_pagelist = try tag_map.getOrPut(tag);
 
             if (maybe_pagelist.found_existing) {
@@ -928,7 +977,7 @@ fn generateTagPages(
                 maybe_pagelist.value_ptr.* = PageList.init(allocator);
                 try maybe_pagelist.value_ptr.append(entry.value_ptr);
             }
-        }
+        };
     }
 
     try std.fs.cwd().makePath("public/_/tags");
@@ -979,17 +1028,18 @@ fn generateTagPages(
             var preview_buffer: [256]u8 = undefined;
             const page_preview_text_read_bytes = try page_fd.read(&preview_buffer);
             const page_preview_text = preview_buffer[0..page_preview_text_read_bytes];
+            const page_web_path = try page.fetchWebPath(allocator);
+            defer allocator.free(page_web_path);
             try writer.print(
                 \\ <div class="page-preview">
-                \\ 	<a href="{s}{s}">
+                \\ 	<a href="{s}">
                 \\ 		<div class="page-preview-title"><h2>{s}</h2></div>
                 \\ 		<div class="page-preview-text">{s}&hellip;</div>
                 \\ 	</a>
                 \\ </div><p>
             ,
                 .{
-                    build_file.config.webroot,
-                    page.web_path.?,
+                    ctx.webPath("/{s}", .{page_web_path}),
                     util.unsafeHTML(page.title),
                     util.unsafeHTML(page_preview_text),
                 },
