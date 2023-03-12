@@ -105,3 +105,42 @@ pub fn WebPathPrinter(comptime ArgsT: anytype, comptime fmt: []const u8) type {
         }
     };
 }
+
+/// Caller owns returned memory.
+pub fn replaceStrings(
+    allocator: std.mem.Allocator,
+    input: []const u8,
+    replace_from: []const u8,
+    replace_to: []const u8,
+) ![]const u8 {
+    const buffer_size = std.mem.replacementSize(
+        u8,
+        input,
+        replace_from,
+        replace_to,
+    );
+    var buffer = try allocator.alloc(u8, buffer_size);
+    _ = std.mem.replace(
+        u8,
+        input,
+        replace_from,
+        replace_to,
+        buffer,
+    );
+
+    return buffer;
+}
+
+pub const lexicographicalCompare = struct {
+    pub fn inner(innerCtx: void, a: []const u8, b: []const u8) bool {
+        _ = innerCtx;
+
+        var i: usize = 0;
+        if (a.len == 0 or b.len == 0) return false;
+        while (a[i] == b[i]) : (i += 1) {
+            if (i == a.len or i == b.len) return false;
+        }
+
+        return a[i] < b[i];
+    }
+}.inner;

@@ -2,7 +2,6 @@ const std = @import("std");
 const koino = @import("koino");
 const libpcre = @import("libpcre");
 
-const StringList = std.ArrayList(u8);
 pub const OwnedStringList = std.ArrayList([]const u8);
 const BuildFile = @import("build_file.zig").BuildFile;
 const processors = @import("processors.zig");
@@ -14,258 +13,19 @@ pub const std_options = struct {
 
 const logger = std.log.scoped(.obsidian2web);
 
-const PageBuildStatus = enum {
-    Unbuilt,
-    Built,
-    Error,
-};
-
-const BuildMetadata = struct {
-    html_path: []const u8,
-    web_path: []const u8,
-    errors: []const u8,
-};
-
-const PageState = union(enum) {
-    unbuilt: void,
-    pre: []const u8,
-    main: void,
-    post: void,
-};
-
-const Page = struct {
-    ctx: *const Context,
-    filesystem_path: []const u8,
-    title: []const u8,
-    ctime: i128,
-
-    tags: ?OwnedStringList = null,
-    state: PageState = .{ .unbuilt = {} },
-
-    //build_metadata: ?BuildMetadata = null,
-
-    const Self = @This();
-
-    /// assumes given path is a ".md" file.
-    pub fn fromPath(ctx: *const Context, fspath: []const u8) !Self {
-        const title_raw = std.fs.path.basename(fspath);
-        const title = title_raw[0 .. title_raw.len - 3];
-        logger.info("create page with title '{s}' @ {s}", .{ title, fspath });
-        var stat = try std.fs.cwd().statFile(fspath);
-        return Self{
-            .ctx = ctx,
-            .filesystem_path = fspath,
-            .ctime = stat.ctime,
-            .title = title,
-        };
-    }
-
-    pub fn deinit(self: Self) void {
-        if (self.tags) |tags| {
-            for (tags.items) |tag| self.ctx.allocator.free(tag);
-            tags.deinit();
-        }
-    }
-
-    pub fn format(
-        self: Self,
-        comptime fmt: []const u8,
-        options: std.fmt.FormatOptions,
-        writer: anytype,
-    ) !void {
-        _ = fmt;
-        _ = options;
-        return writer.print("Page<path='{s}'>", .{self.filesystem_path});
-    }
-
-    pub fn relativePath(self: Self) []const u8 {
-        const relative_fspath = std.mem.trimLeft(
-            u8,
-            self.filesystem_path,
-            self.ctx.build_file.vault_path,
-        );
-        std.debug.assert(relative_fspath[0] != '/'); // must be relative
-        return relative_fspath;
-    }
-
-    pub fn fetchHtmlPath(self: Self, allocator: std.mem.Allocator) ![]const u8 {
-        // output_path = relative_fspath with ".md" replaced to ".html"
-
-        var raw_output_path = try std.fs.path.resolve(
-            allocator,
-            &[_][]const u8{ "public", self.relativePath() },
-        );
-        defer allocator.free(raw_output_path);
-
-        return try replaceStrings(
-            allocator,
-            raw_output_path,
-            ".md",
-            ".html",
-        );
-    }
-
-    pub fn fetchWebPath(
-        self: Self,
-        allocator: std.mem.Allocator,
-    ) ![]const u8 {
-        const output_path = try self.fetchHtmlPath(allocator);
-        defer allocator.free(output_path);
-
-        // to generate web_path, we need to:
-        //  - take html_path
-        //  - remove public/
-        //  - replace std.fs.path.sep to '/'
-        //  - Uri.escapeString
-
-        var trimmed_output_path = std.mem.trimLeft(
-            u8,
-            output_path,
-            "public" ++ std.fs.path.sep_str,
-        );
-
-        var trimmed_output_path_2 = try replaceStrings(
-            allocator,
-            trimmed_output_path,
-            std.fs.path.sep_str,
-            "/",
-        );
-        defer allocator.free(trimmed_output_path_2);
-
-        const web_path = try std.Uri.escapeString(allocator, trimmed_output_path_2);
-        return web_path;
-    }
-};
-
-/// Caller owns returned memory.
-fn replaceStrings(
-    allocator: std.mem.Allocator,
-    input: []const u8,
-    replace_from: []const u8,
-    replace_to: []const u8,
-) ![]const u8 {
-    const buffer_size = std.mem.replacementSize(
-        u8,
-        input,
-        replace_from,
-        replace_to,
-    );
-    var buffer = try allocator.alloc(u8, buffer_size);
-    _ = std.mem.replace(
-        u8,
-        input,
-        replace_from,
-        replace_to,
-        buffer,
-    );
-
-    return buffer;
-}
-
+const Page = @import("Page.zig");
 const PageMap = std.StringHashMap(Page);
 
 // article on path a/b/c/d/e.md is mapped as "e" in this title map.
 const TitleMap = std.StringHashMap([]const u8);
 
-const PageFile = union(enum) {
-    dir: PageFolder,
-    file: []const u8,
-};
-
-const PageFolder = std.StringHashMap(PageFile);
-
-/// recursively deinitialize a PageFolder
-fn deinitPageFolder(folder: *PageFolder) void {
-    var folder_it = folder.iterator();
-    while (folder_it.next()) |entry| {
-        var child = entry.value_ptr;
-        switch (child.*) {
-            .dir => |*child_folder| deinitPageFolder(child_folder),
-            .file => {},
-        }
-    }
-    folder.deinit();
-}
-
-/// Recursively walk from a PageFolder to another PageFolder, using `to` as
-/// a guide.
-fn walkToDir(from: PageFolder, to: []const u8) PageFolder {
-    printHashMap(from);
-
-    logger.debug("walking to {s}", .{to});
-    var it = std.mem.split(u8, to, std.fs.path.sep_str);
-    const component = it.next().?;
-    _ = it.next() orelse return from;
-    logger.debug("component is {s}", .{component});
-
-    return walkToDir(from.get(component).?.dir, to[component.len + 1 ..]);
-}
-
-// TODO rename to PathTree
-const PageTree = struct {
-    allocator: std.mem.Allocator,
-    root: PageFolder,
-
-    const Self = @This();
-
-    pub fn init(allocator: std.mem.Allocator) Self {
-        return Self{
-            .allocator = allocator,
-            .root = PageFolder.init(allocator),
-        };
-    }
-
-    pub fn deinit(self: *Self) void {
-        deinitPageFolder(&self.root);
-    }
-
-    pub fn addPath(self: *Self, fspath: []const u8) !void {
-        const total_seps = std.mem.count(u8, fspath, std.fs.path.sep_str);
-        var path_it = std.mem.split(u8, fspath, std.fs.path.sep_str);
-
-        var current_page: ?*PageFolder = &self.root;
-        var idx: usize = 0;
-        while (true) : (idx += 1) {
-            const maybe_path_component = path_it.next();
-            if (maybe_path_component == null) break;
-            const path_component = maybe_path_component.?;
-
-            if (current_page.?.getPtr(path_component)) |child_page| {
-                current_page = &child_page.dir;
-            } else {
-
-                // if last component, create file (and set current_page to null), else, create folder
-                if (idx == total_seps) {
-                    try current_page.?.put(path_component, .{ .file = fspath });
-                } else {
-                    try current_page.?.put(path_component, .{ .dir = PageFolder.init(self.allocator) });
-                    current_page = &current_page.?.getPtr(path_component).?.dir;
-                }
-            }
-        }
-    }
-};
-
+const PathTree = @import("./PathTree.zig");
 pub const StringBuffer = std.ArrayList(u8);
 const SliceList = std.ArrayList([]const u8);
 
-const lexicographicalCompare = struct {
-    pub fn inner(innerCtx: void, a: []const u8, b: []const u8) bool {
-        _ = innerCtx;
-
-        var i: usize = 0;
-        if (a.len == 0 or b.len == 0) return false;
-        while (a[i] == b[i]) : (i += 1) {
-            if (i == a.len or i == b.len) return false;
-        }
-
-        return a[i] < b[i];
-    }
-}.inner;
-
 const TreeGeneratorContext = struct {
-    current_folder: ?PageFolder = null,
-    root_folder: ?PageFolder = null,
+    current_folder: ?PathTree.PageFolder = null,
+    root_folder: ?PathTree.PageFolder = null,
     indentation_level: usize = 0,
 };
 
@@ -289,7 +49,8 @@ fn writePageTree(
     generating_tree_for: ?*const Page,
 ) !void {
     const root_folder =
-        tree_context.root_folder orelse ctx.tree.root.getPtr("").?.dir;
+        tree_context.root_folder orelse
+        PathTree.walkToDir(ctx.tree.root, ctx.build_file.vault_path);
     const current_folder =
         tree_context.current_folder orelse root_folder;
 
@@ -311,8 +72,8 @@ fn writePageTree(
             }
         }
 
-        std.sort.sort([]const u8, folders.items, {}, lexicographicalCompare);
-        std.sort.sort([]const u8, files.items, {}, lexicographicalCompare);
+        std.sort.sort([]const u8, folders.items, {}, util.lexicographicalCompare);
+        std.sort.sort([]const u8, files.items, {}, util.lexicographicalCompare);
     }
 
     // draw folders first (they recurse)
@@ -395,7 +156,7 @@ pub const Context = struct {
     arenas: ArenaHolder,
     pages: PageMap,
     titles: TitleMap,
-    tree: PageTree,
+    tree: PathTree,
 
     const Self = @This();
 
@@ -411,7 +172,7 @@ pub const Context = struct {
             .arenas = ArenaHolder.init(allocator),
             .pages = PageMap.init(allocator),
             .titles = TitleMap.init(allocator),
-            .tree = PageTree.init(allocator),
+            .tree = PathTree.init(allocator),
         };
     }
 
@@ -466,6 +227,7 @@ pub const Context = struct {
 
 const ByteList = std.ArrayList(u8);
 
+// insert into PageTree from the given include paths
 fn iterateVaultPath(ctx: *Context) !void {
     for (ctx.build_file.includes.items) |relative_include_path| {
         const absolute_include_path = try std.fs.path.resolve(
@@ -570,6 +332,8 @@ pub fn main() anyerror!void {
 
         var pages_it = ctx.pages.iterator();
         while (pages_it.next()) |entry| {
+            // TODO can we make both pre and post processors just run
+            // the same underlying function? the logic isn't all that different
             try markdownProcessorPass(&ctx, &markdown_processors, entry.value_ptr);
             try mainPass(&ctx, entry.value_ptr);
             try postProcessorPass(&ctx, &post_processors, entry.value_ptr);
@@ -577,47 +341,7 @@ pub fn main() anyerror!void {
     }
 
     // generate index page
-    {
-        // if an index file was provided in the config, copypaste the resulting
-        // HTML as that'll work
-        if (build_file.config.index) |relative_index_path| {
-            const page_path = try std.fs.path.resolve(
-                ctx.allocator,
-                &[_][]const u8{ ctx.build_file.vault_path, relative_index_path },
-            );
-            defer ctx.allocator.free(page_path);
-            const page =
-                ctx.pages.get(page_path) orelse return error.IndexPageNotFound;
-
-            const html_path = try page.fetchHtmlPath(ctx.allocator);
-            defer ctx.allocator.free(html_path);
-
-            try std.fs.Dir.copyFile(
-                std.fs.cwd(),
-                html_path,
-                std.fs.cwd(),
-                "public/index.html",
-                .{},
-            );
-        } else {
-            // if not, generate our own empty file
-            // that contains just the table of contents
-
-            const index_out_fd = try std.fs.cwd().createFile(
-                "public/index.html",
-                .{ .truncate = true },
-            );
-            defer index_out_fd.close();
-
-            const writer = index_out_fd.writer();
-
-            try writeHead(writer, build_file, "Index Page");
-            try writePageTree(writer, &ctx, .{
-                .root_folder = walkToDir(ctx.tree.root, ctx.build_file.vault_path),
-            }, null);
-            try writeEmptyPage(writer, build_file);
-        }
-    }
+    try generateIndexPage(ctx);
 
     // TODO use ctx without of allocator, build_file, pages
     try generateTagPages(&ctx, ctx.allocator, ctx.build_file, ctx.pages);
@@ -809,9 +533,7 @@ fn mainPass(ctx: *Context, page: *Page) !void {
     {
         try writeHead(output, ctx.build_file, page.title);
 
-        try writePageTree(output, ctx, .{
-            .root_folder = walkToDir(ctx.tree.root, ctx.build_file.vault_path),
-        }, page);
+        try writePageTree(output, ctx, .{}, page);
         try output.print(
             \\  </nav>
             \\  <main class="text">
@@ -846,6 +568,46 @@ fn mainPass(ctx: *Context, page: *Page) !void {
         _ = try output_fd.write(result.items);
 
         page.state = .{ .main = {} };
+    }
+}
+
+fn generateIndexPage(ctx: Context) !void {
+    // if an index file was provided in the config, copypaste the resulting
+    // HTML as that'll work
+    if (ctx.build_file.config.index) |relative_index_path| {
+        const page_path = try std.fs.path.resolve(
+            ctx.allocator,
+            &[_][]const u8{ ctx.build_file.vault_path, relative_index_path },
+        );
+        defer ctx.allocator.free(page_path);
+        const page =
+            ctx.pages.get(page_path) orelse return error.IndexPageNotFound;
+
+        const html_path = try page.fetchHtmlPath(ctx.allocator);
+        defer ctx.allocator.free(html_path);
+
+        try std.fs.Dir.copyFile(
+            std.fs.cwd(),
+            html_path,
+            std.fs.cwd(),
+            "public/index.html",
+            .{},
+        );
+    } else {
+        // if not, generate our own empty file
+        // that contains just the table of contents
+
+        const index_out_fd = try std.fs.cwd().createFile(
+            "public/index.html",
+            .{ .truncate = true },
+        );
+        defer index_out_fd.close();
+
+        const writer = index_out_fd.writer();
+
+        try writeHead(writer, ctx.build_file, "Index Page");
+        try writePageTree(writer, &ctx, .{}, null);
+        try writeEmptyPage(writer, ctx.build_file);
     }
 }
 
@@ -1019,7 +781,6 @@ fn generateTagPages(
         try writer.print("<div class=\"tag-page\">", .{});
 
         for (entry.value_ptr.items) |page| {
-            // TODO escape data
             var page_fd = try std.fs.cwd().openFile(
                 page.filesystem_path,
                 .{ .mode = .read_only },
