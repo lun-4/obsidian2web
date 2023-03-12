@@ -195,6 +195,7 @@ pub const TableOfContentsProcessor = struct {
         };
 
         try titles.append(try ctx.allocator.dupe(u8, title));
+        logger.debug("anchor found: {s}", .{title});
         try pctx.out.print(
             "<h{d} id=\"{s}\">{s} <a href=\"#{s}\">#</a></h{d}>",
             .{ level, web_title_id, title, web_title_id, level },

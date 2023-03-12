@@ -556,13 +556,13 @@ fn mainPass(ctx: *Context, page: *Page) !void {
         try writeHead(output, ctx.build_file, page.title);
 
         try writePageTree(output, ctx, .{}, page);
-        try output.print(
-            \\  </nav>
-            \\  <nav class="page-toc">
-        , .{});
+        //try output.print(
+        //    \\  </nav>
+        //    \\  <nav class="page-toc">
+        //, .{});
         if (page.titles) |titles| for (titles.items) |title| {
             try output.print(
-                \\  <a href="#{s}">{s}</p>
+                \\  <a href="#{s}">{s}</a></p>
             , .{
                 util.WebTitlePrinter{ .title = title },
                 title,
