@@ -11,6 +11,7 @@ title: []const u8,
 ctime: i128,
 
 tags: ?OwnedStringList = null,
+titles: ?OwnedStringList = null,
 state: State = .{ .unbuilt = {} },
 
 const Self = @This();
@@ -40,6 +41,10 @@ pub fn deinit(self: Self) void {
     if (self.tags) |tags| {
         for (tags.items) |tag| self.ctx.allocator.free(tag);
         tags.deinit();
+    }
+    if (self.titles) |titles| {
+        for (titles.items) |title| self.ctx.allocator.free(title);
+        titles.deinit();
     }
 }
 

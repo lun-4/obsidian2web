@@ -150,3 +150,55 @@ pub const TagProcessor = struct {
         );
     }
 };
+
+pub const TableOfContentsProcessor = struct {
+    regex: libpcre.Regex,
+
+    const REGEX: [:0]const u8 = "^(#+) [a-zA-Z0-9-_: ]+";
+    const Self = @This();
+
+    pub fn init() !Self {
+        return Self{ .regex = try libpcre.Regex.compile(
+            REGEX,
+            .{ .Multiline = true },
+        ) };
+    }
+
+    pub fn deinit(self: Self) void {
+        self.regex.deinit();
+    }
+
+    pub fn handle(
+        self: Self,
+        /// Processor context. `pctx.ctx` gives Context
+        pctx: anytype,
+        file_contents: []const u8,
+        captures: []?libpcre.Capture,
+    ) !void {
+        _ = self;
+        var ctx = pctx.ctx;
+
+        const full_match = captures[0].?;
+        const raw_text = file_contents[full_match.start..full_match.end];
+
+        const hashtag_match = captures[1].?;
+        const hashtag_length = hashtag_match.end - hashtag_match.start;
+
+        const title = raw_text[hashtag_length + 1 ..];
+        const web_title_id = util.WebTitlePrinter{ .title = title };
+
+        const level = hashtag_length;
+
+        var titles = if (pctx.page.titles) |*titles| titles else blk: {
+            pctx.page.titles = root.OwnedStringList.init(ctx.allocator);
+            break :blk &pctx.page.titles.?;
+        };
+
+        try titles.append(try ctx.allocator.dupe(u8, title));
+        logger.debug("anchor found: {s}", .{title});
+        try pctx.out.print(
+            "<h{d} id=\"{s}\">{s} <a href=\"#{s}\">#</a></h{d}>",
+            .{ level, web_title_id, title, web_title_id, level },
+        );
+    }
+};
