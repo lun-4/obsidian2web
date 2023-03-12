@@ -342,9 +342,7 @@ pub fn main() anyerror!void {
 
     // generate index page
     try generateIndexPage(ctx);
-
-    // TODO use ctx without of allocator, build_file, pages
-    try generateTagPages(&ctx, ctx.allocator, ctx.build_file, ctx.pages);
+    try generateTagPages(ctx);
 }
 
 const PostProcessors = struct {
@@ -707,13 +705,8 @@ fn postProcessorPass(
 
 const PageList = std.ArrayList(*const Page);
 
-fn generateTagPages(
-    ctx: *const Context,
-    allocator: std.mem.Allocator,
-    build_file: BuildFile,
-    pages: PageMap,
-) !void {
-    var tag_map = std.StringHashMap(PageList).init(allocator);
+fn generateTagPages(ctx: Context) !void {
+    var tag_map = std.StringHashMap(PageList).init(ctx.allocator);
 
     defer {
         var tags_it = tag_map.iterator();
@@ -721,7 +714,7 @@ fn generateTagPages(
         tag_map.deinit();
     }
 
-    var it = pages.iterator();
+    var it = ctx.pages.iterator();
     while (it.next()) |entry| {
         var page = entry.value_ptr;
         logger.debug("processing tags in {}", .{page});
@@ -732,7 +725,7 @@ fn generateTagPages(
             if (maybe_pagelist.found_existing) {
                 try maybe_pagelist.value_ptr.append(entry.value_ptr);
             } else {
-                maybe_pagelist.value_ptr.* = PageList.init(allocator);
+                maybe_pagelist.value_ptr.* = PageList.init(ctx.allocator);
                 try maybe_pagelist.value_ptr.append(entry.value_ptr);
             }
         };
@@ -759,7 +752,7 @@ fn generateTagPages(
 
         var writer = output_file.writer();
 
-        try writeHead(writer, build_file, tag_name);
+        try writeHead(writer, ctx.build_file, tag_name);
         _ = try writer.write(
             \\  </nav>
             \\  <main class="text">
@@ -785,8 +778,8 @@ fn generateTagPages(
             var preview_buffer: [256]u8 = undefined;
             const page_preview_text_read_bytes = try page_fd.read(&preview_buffer);
             const page_preview_text = preview_buffer[0..page_preview_text_read_bytes];
-            const page_web_path = try page.fetchWebPath(allocator);
-            defer allocator.free(page_web_path);
+            const page_web_path = try page.fetchWebPath(ctx.allocator);
+            defer ctx.allocator.free(page_web_path);
             try writer.print(
                 \\ <div class="page-preview">
                 \\ 	<a href="{s}">
@@ -809,7 +802,7 @@ fn generateTagPages(
             \\  </main>
         );
 
-        if (build_file.config.project_footer) {
+        if (ctx.build_file.config.project_footer) {
             _ = try writer.write(FOOTER);
         }
 
