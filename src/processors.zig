@@ -154,7 +154,7 @@ pub const TagProcessor = struct {
 pub const TableOfContentsProcessor = struct {
     regex: libpcre.Regex,
 
-    const REGEX: [:0]const u8 = "^# [a-zA-Z0-9-_]+";
+    const REGEX: [:0]const u8 = "^(#+) [a-zA-Z0-9-_: ]+";
     const Self = @This();
 
     pub fn init() !Self {
@@ -180,9 +180,14 @@ pub const TableOfContentsProcessor = struct {
 
         const full_match = captures[0].?;
         const raw_text = file_contents[full_match.start..full_match.end];
-        const title = raw_text[2..];
+
+        const hashtag_match = captures[1].?;
+        const hashtag_length = hashtag_match.end - hashtag_match.start;
+
+        const title = raw_text[hashtag_length + 1 ..];
         const web_title_id = util.WebTitlePrinter{ .title = title };
-        const level = 1;
+
+        const level = hashtag_length;
 
         var titles = if (pctx.page.titles) |*titles| titles else blk: {
             pctx.page.titles = root.OwnedStringList.init(ctx.allocator);

@@ -558,6 +558,19 @@ fn mainPass(ctx: *Context, page: *Page) !void {
         try writePageTree(output, ctx, .{}, page);
         try output.print(
             \\  </nav>
+            \\  <nav class="page-toc">
+        , .{});
+        if (page.titles) |titles| for (titles.items) |title| {
+            try output.print(
+                \\  <a href="#{s}">{s}</p>
+            , .{
+                util.WebTitlePrinter{ .title = title },
+                title,
+            });
+        };
+
+        try output.print(
+            \\  </nav>
             \\  <main class="text">
         , .{});
         try output.print(
