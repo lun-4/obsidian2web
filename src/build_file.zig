@@ -34,7 +34,8 @@ pub const BuildFile = struct {
         while (file_lines_it.next()) |line| {
             if (line.len == 0) continue;
             if (line[0] == '#') continue;
-            const first_space_index = std.mem.indexOf(u8, line, " ") orelse return error.ParseError;
+            const first_space_index =
+                std.mem.indexOf(u8, line, " ") orelse return error.ParseError;
 
             const directive = std.mem.trim(u8, line[0..first_space_index], "\n");
             const value = line[first_space_index + 1 ..];
@@ -58,7 +59,7 @@ pub const BuildFile = struct {
 
         return Self{
             .allocator = allocator,
-            .vault_path = vault_path.?,
+            .vault_path = vault_path orelse return error.VaultPathRequired,
             .includes = includes,
             .config = config,
         };
