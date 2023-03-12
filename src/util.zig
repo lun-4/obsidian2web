@@ -144,3 +144,25 @@ pub const lexicographicalCompare = struct {
         return a[i] < b[i];
     }
 }.inner;
+
+pub const WebTitlePrinter = struct {
+    title: []const u8,
+
+    const Self = @This();
+
+    pub fn format(
+        self: Self,
+        comptime fmt: []const u8,
+        options: std.fmt.FormatOptions,
+        writer: anytype,
+    ) !void {
+        _ = options;
+        _ = fmt;
+        for (self.title) |character| {
+            _ = try writer.writeByte(switch (character) {
+                ' ' => '-',
+                else => std.ascii.toLower(character),
+            });
+        }
+    }
+};

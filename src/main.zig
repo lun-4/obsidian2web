@@ -349,6 +349,7 @@ const PostProcessors = struct {
 
 const PreProcessors = struct {
     tag: processors.TagProcessor,
+    page_toc: processors.TableOfContentsProcessor,
 };
 
 fn initProcessors(comptime ProcessorHolderT: type) !ProcessorHolderT {
