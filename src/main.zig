@@ -525,9 +525,24 @@ fn mainPass(ctx: *Context, page: *Page) !void {
 
     // TODO maybe we can just open output file as write only here?
 
-    var result = ByteList.init(ctx.allocator);
-    defer result.deinit();
-    var output = result.writer();
+    var output_fd = blk: {
+        var html_path = try page.fetchHtmlPath(ctx.allocator);
+        defer ctx.allocator.free(html_path);
+        logger.info("writing to '{s}'", .{html_path});
+
+        const leading_path_to_file = std.fs.path.dirname(html_path).?;
+        try std.fs.cwd().makePath(leading_path_to_file);
+
+        break :blk try std.fs.cwd().createFile(
+            html_path,
+            .{ .read = false, .truncate = true },
+        );
+    };
+    defer output_fd.close();
+
+    defer page.state = .{ .main = {} };
+
+    var output = output_fd.writer();
 
     // write time
     {
@@ -549,25 +564,6 @@ fn mainPass(ctx: *Context, page: *Page) !void {
             \\ </body>
             \\ </html>
         , .{if (ctx.build_file.config.project_footer) FOOTER else ""});
-    }
-
-    // write all we got to file
-    {
-        var html_path = try page.fetchHtmlPath(ctx.allocator);
-        defer ctx.allocator.free(html_path);
-        logger.info("writing to '{s}'", .{html_path});
-
-        const leading_path_to_file = std.fs.path.dirname(html_path).?;
-        try std.fs.cwd().makePath(leading_path_to_file);
-
-        var output_fd = try std.fs.cwd().createFile(
-            html_path,
-            .{ .read = false, .truncate = true },
-        );
-        defer output_fd.close();
-        _ = try output_fd.write(result.items);
-
-        page.state = .{ .main = {} };
     }
 }
 
