@@ -47,6 +47,8 @@ other directives you might add
   - either force all links to exist or let them fail silently (renders as `[[whatever]]` in the output html)
 - `project_footer yes` or `project_footer no` (default is `no`)
   - add a small reference to obsidian2web on all the page's footers.
+- `custom_css path/to/css/file`
+  - use a differentt file for `styles.css` instead of the builtin one
 
 build your vault like this
 
