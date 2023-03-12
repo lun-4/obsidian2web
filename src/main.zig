@@ -319,24 +319,21 @@ pub fn main() anyerror!void {
         try createStaticResources();
 
         // for each page
-        //  - pass 1: run pre processors (markdown to html)
-        //  - pass 2: turn markdown into html (koino)
+        //  - pass 1: run pre processors
+        //  - pass 2: turn page markdown into html (koino)
         //  - pass 3: run post processors
 
-        // TODO rename markdown processors to pre processors.
-        var markdown_processors = try initProcessors(MarkdownProcessors);
-        defer deinitProcessors(markdown_processors);
+        var pre_processors = try initProcessors(PreProcessors);
+        defer deinitProcessors(pre_processors);
 
         var post_processors = try initProcessors(PostProcessors);
         defer deinitProcessors(post_processors);
 
         var pages_it = ctx.pages.iterator();
         while (pages_it.next()) |entry| {
-            // TODO can we make both pre and post processors just run
-            // the same underlying function? the logic isn't all that different
-            try markdownProcessorPass(&ctx, &markdown_processors, entry.value_ptr);
+            try runProcessors(&ctx, &pre_processors, entry.value_ptr, .{ .pre = true });
             try mainPass(&ctx, entry.value_ptr);
-            try postProcessorPass(&ctx, &post_processors, entry.value_ptr);
+            try runProcessors(&ctx, &post_processors, entry.value_ptr, .{});
         }
     }
 
@@ -350,7 +347,7 @@ const PostProcessors = struct {
     cross_page_link: processors.CrossPageLinkProcessor,
 };
 
-const MarkdownProcessors = struct {
+const PreProcessors = struct {
     tag: processors.TagProcessor,
 };
 
@@ -368,6 +365,7 @@ fn deinitProcessors(procs: anytype) void {
     }
 }
 
+// Contains data that will be sent to the processor
 fn Holder(comptime ProcessorT: type, comptime WriterT: type) type {
     return struct {
         ctx: *Context,
@@ -378,38 +376,50 @@ fn Holder(comptime ProcessorT: type, comptime WriterT: type) type {
     };
 }
 
-/// This pass will run pre processors only
-fn markdownProcessorPass(
+const RunProcessorOptions = struct {
+    pre: bool = false,
+};
+
+fn runProcessors(
     ctx: *Context,
-    markdown_processors: anytype,
+    processor_list: anytype,
     page: *Page,
+    options: RunProcessorOptions,
 ) !void {
     logger.info("pass 1: processing {}", .{page});
 
-    // as these transformers may generate content on top of the page
-    // (either markdown or html, i dont care), and we have multiple of them,
-    // create a temp file that contains those results
+    var temp_output_path: []const u8 = if (options.pre) blk: {
+        std.debug.assert(page.state == .unbuilt);
+        var markdown_output_path = "/tmp/sex.md"; // TODO fetchTemporaryMarkdownPath();
 
-    var markdown_output_path = "/tmp/sex.md"; // fetchTemporaryMarkdownPath();
-    defer page.state = .{ .pre = markdown_output_path };
+        try std.fs.Dir.copyFile(
+            std.fs.cwd(),
+            page.filesystem_path,
+            std.fs.cwd(),
+            markdown_output_path,
+            .{},
+        );
+        break :blk markdown_output_path[0..];
+    } else blk: {
+        std.debug.assert(page.state == .main);
+        break :blk try page.fetchHtmlPath(ctx.allocator);
+    };
 
-    try std.fs.Dir.copyFile(
-        std.fs.cwd(),
-        page.filesystem_path,
-        std.fs.cwd(),
-        markdown_output_path,
-        .{},
-    );
+    defer page.state = if (options.pre)
+        .{ .pre = temp_output_path }
+    else
+        .{ .post = {} };
 
-    inline for (@typeInfo(MarkdownProcessors).Struct.fields) |field| {
-        var processor = @field(markdown_processors, field.name);
+    defer if (!options.pre) ctx.allocator.free(temp_output_path);
 
-        //var processor_page_ctx = processor.initForPage();
-        //defer processor_page_ctx.deinit();
+    inline for (
+        @typeInfo(@typeInfo(@TypeOf(processor_list)).Pointer.child).Struct.fields,
+    ) |field| {
+        var processor = @field(processor_list, field.name);
 
         const output_file_contents = blk: {
             var output_fd = try std.fs.cwd().openFile(
-                markdown_output_path,
+                temp_output_path,
                 .{ .mode = .read_only },
             );
             defer output_fd.close();
@@ -479,7 +489,7 @@ fn markdownProcessorPass(
 
         {
             var output_fd = try std.fs.cwd().openFile(
-                markdown_output_path,
+                temp_output_path,
                 .{ .mode = .write_only },
             );
             defer output_fd.close();
@@ -600,104 +610,6 @@ fn generateIndexPage(ctx: Context) !void {
         try writeHead(writer, ctx.build_file, "Index Page");
         try writePageTree(writer, &ctx, .{}, null);
         try writeEmptyPage(writer, ctx.build_file);
-    }
-}
-
-fn postProcessorPass(
-    ctx: *Context,
-    procs: anytype,
-    page: *Page,
-) !void {
-    logger.info("post: processing {}", .{page});
-
-    std.debug.assert(page.state == .main);
-    defer page.state = .{ .post = {} };
-
-    var html_path = try page.fetchHtmlPath(ctx.allocator);
-    defer ctx.allocator.free(html_path);
-
-    inline for (@typeInfo(@typeInfo(@TypeOf(procs)).Pointer.child).Struct.fields) |field| {
-        var processor = @field(procs, field.name);
-        logger.info("running {s} in {}", .{ field.name, page });
-
-        const output_file_contents = blk: {
-            var output_fd = try std.fs.cwd().openFile(
-                html_path,
-                .{ .mode = .read_only },
-            );
-            defer output_fd.close();
-
-            break :blk try output_fd.reader().readAllAlloc(
-                ctx.allocator,
-                std.math.maxInt(usize),
-            );
-        };
-        defer ctx.allocator.free(output_file_contents);
-
-        var result = ByteList.init(ctx.allocator);
-        defer result.deinit();
-
-        const HolderT = Holder(@TypeOf(processor), ByteList.Writer);
-
-        var last_capture: ?libpcre.Capture = null;
-        var context_holder = HolderT{
-            .ctx = ctx,
-            .processor = processor,
-            .page = page,
-            .last_capture = &last_capture,
-            .out = result.writer(),
-        };
-
-        try util.captureWithCallback(
-            processor.regex,
-            output_file_contents,
-            .{},
-            ctx.allocator,
-            HolderT,
-            &context_holder,
-            struct {
-                fn inner(
-                    holder: *HolderT,
-                    full_string: []const u8,
-                    capture: []?libpcre.Capture,
-                ) !void {
-                    const first_group = capture[0].?;
-                    _ = if (holder.last_capture.* == null)
-                        try holder.out.write(
-                            full_string[0..first_group.start],
-                        )
-                    else
-                        try holder.out.write(
-                            full_string[holder.last_capture.*.?.end..first_group.start],
-                        );
-
-                    try holder.processor.handle(
-                        holder,
-                        full_string,
-                        capture,
-                    );
-                    holder.last_capture.* = first_group;
-                }
-            }.inner,
-        );
-
-        _ = if (last_capture == null)
-            try result.writer().write(
-                output_file_contents[0..output_file_contents.len],
-            )
-        else
-            try result.writer().write(
-                output_file_contents[last_capture.?.end..output_file_contents.len],
-            );
-
-        {
-            var output_fd = try std.fs.cwd().openFile(
-                html_path,
-                .{ .mode = .write_only },
-            );
-            defer output_fd.close();
-            _ = try output_fd.write(result.items);
-        }
     }
 }
 
