@@ -187,8 +187,8 @@ fn deinitPageFolder(folder: *PageFolder) void {
     folder.deinit();
 }
 
-const sepstr = &[_]u8{std.fs.path.sep};
-
+/// Recursively walk from a PageFolder to another PageFolder, using `to` as
+/// a guide.
 fn walkToDir(from: PageFolder, to: []const u8) PageFolder {
     printHashMap(from);
 
@@ -220,8 +220,8 @@ const PageTree = struct {
     }
 
     pub fn addPath(self: *Self, fspath: []const u8) !void {
-        const total_seps = std.mem.count(u8, fspath, sepstr);
-        var path_it = std.mem.split(u8, fspath, sepstr);
+        const total_seps = std.mem.count(u8, fspath, std.fs.path.sep_str);
+        var path_it = std.mem.split(u8, fspath, std.fs.path.sep_str);
 
         var current_page: ?*PageFolder = &self.root;
         var idx: usize = 0;
@@ -247,98 +247,6 @@ const PageTree = struct {
 };
 
 pub const StringBuffer = std.ArrayList(u8);
-
-// TODO move to util
-
-pub const ProcessorContext = struct {
-    build_file: *const BuildFile,
-    titles: *TitleMap,
-    pages: *PageMap,
-    captures: []?libpcre.Capture,
-    file_contents: []const u8,
-    current_page: *Page,
-    current_html_path: []const u8,
-    allocator: std.mem.Allocator,
-};
-
-const Paths = struct {
-    /// Path to given page in the web browser
-    ///  (must be concatenated with webroot to be correct)
-    relative_web_path: []const u8,
-    /// Path to given page in the public/ folder (html)
-    output_path: []const u8,
-};
-
-fn to_hex_digit(digit: u8) u8 {
-    return switch (digit) {
-        0...9 => '0' + digit,
-        10...255 => 'A' - 10 + digit,
-    };
-}
-
-pub fn parsePaths(local_path: []const u8, string_buffer: []u8) !Paths {
-    var fba = std.heap.FixedBufferAllocator{ .buffer = string_buffer, .end_index = 0 };
-    var alloc = fba.allocator();
-
-    // local_path contains path to markdown file relative to vault_dir
-    //  (so if you want to access it, concatenate vault_dir with local_path)
-    //
-
-    // to generate html path, take public/ + local_path, and replace
-    // ".md" with ".html"
-    const html_path_raw = try std.fs.path.join(alloc, &[_][]const u8{ "public", local_path });
-    const offset = std.mem.replacementSize(u8, html_path_raw, ".md", ".html");
-    var html_path_buffer = try alloc.alloc(u8, offset);
-    _ = std.mem.replace(u8, html_path_raw, ".md", ".html", html_path_buffer);
-    const html_path = html_path_buffer[0..offset];
-
-    // to generate web path, we need to:
-    //  - take html_path
-    //  - remove public/
-    //  - replace std.fs.path.sep to '/'
-    //  - done!
-
-    const web_path_r1_size = std.mem.replacementSize(u8, html_path, "public" ++ sepstr, "");
-    var web_path_r1_buffer = try alloc.alloc(u8, web_path_r1_size);
-    _ = std.mem.replace(u8, html_path, "public" ++ sepstr, "", web_path_r1_buffer);
-    const web_path_r1 = web_path_r1_buffer[0..web_path_r1_size];
-
-    const web_path_r2_size = std.mem.replacementSize(u8, web_path_r1, sepstr, "/");
-    var web_path_r2_buffer = try alloc.alloc(u8, web_path_r2_size);
-    _ = std.mem.replace(u8, web_path_r1, sepstr, "/", web_path_r2_buffer);
-    const web_path_raw = web_path_r2_buffer[0..web_path_r2_size];
-
-    var result = StringList.init(alloc);
-    defer result.deinit();
-
-    for (web_path_raw) |char| {
-        switch (char) {
-            // safe characters
-            '0'...'9',
-            'A'...'Z',
-            'a'...'z',
-            '-',
-            '.',
-            '_',
-            '~',
-            std.fs.path.sep,
-            => try result.append(char),
-            // encode everything else with percent encoding
-            else => try result.appendSlice(
-                &[_]u8{ '%', to_hex_digit(char >> 4), to_hex_digit(char & 15) },
-            ),
-        }
-    }
-
-    // full web_path does not contain the dot .
-    const web_path = std.mem.trimLeft(u8, try result.toOwnedSlice(), ".");
-
-    return Paths{
-        .web_path = web_path,
-        .html_path = html_path,
-    };
-}
-
 const SliceList = std.ArrayList([]const u8);
 
 const lexicographicalCompare = struct {
@@ -459,110 +367,11 @@ fn writePageTree(
     try writer.print("</ul>\n", .{});
 }
 
-const TocContext = struct {
-    current_relative_path: ?[]const u8 = null,
-    ident: usize = 0,
-};
-
-/// Generate Table of Contents given the root folder.
-///
-/// Operates recursively.
-pub fn generateToc(
-    result: *StringList,
-    build_file: *const BuildFile,
-    pages: *const PageMap,
-    folder: *const PageFolder,
-    context: *TocContext,
-    current_page_path: ?[]const u8,
-) error{OutOfMemory}!void {
-    var folder_iterator = folder.iterator();
-
-    // step 1: find all the folders at this level.
-
-    var folders = SliceList.init(result.allocator);
-    defer folders.deinit();
-
-    var files = SliceList.init(result.allocator);
-    defer files.deinit();
-
-    while (folder_iterator.next()) |entry| {
-        switch (entry.value_ptr.*) {
-            .dir => try folders.append(entry.key_ptr.*),
-            .file => try files.append(entry.key_ptr.*),
-        }
-    }
-
-    std.sort.sort([]const u8, folders.items, {}, lexicographicalCompare);
-    std.sort.sort([]const u8, files.items, {}, lexicographicalCompare);
-
-    // draw folders first (by recursing), then draw files second!
-    var writer = result.writer();
-    for (folders.items) |folder_name| {
-        try writer.print("<details>", .{});
-
-        const child_folder_entry = folder.getEntry(folder_name).?;
-        try result.writer().print(
-            "<summary>{s}</summary>\n",
-            .{util.unsafeHTML(folder_name)},
-        );
-
-        context.ident += 1;
-        defer context.ident -= 1;
-
-        try generateToc(result, build_file, pages, &child_folder_entry.value_ptr.*.dir, context, current_page_path);
-
-        try result.writer().print("</details>\n", .{});
-    }
-
-    try writer.print("<ul>", .{});
-    for (files.items) |file_name| {
-        const local_path = folder.get(file_name).?.file;
-
-        var toc_path_buffer: [2048]u8 = undefined;
-        const toc_paths = try parsePaths(local_path, &toc_path_buffer);
-
-        const title = std.fs.path.basename(toc_paths.html_path);
-
-        const current_attr = if (current_page_path != null and std.mem.eql(u8, current_page_path.?, toc_paths.web_path))
-            "aria-current=\"page\" "
-        else
-            " ";
-
-        try result.writer().print(
-            "<li><a class=\"toc-link\" {s}href=\"{s}{s}\">{s}</a></li>\n",
-            .{
-                current_attr,
-                build_file.config.webroot,
-                util.unsafeHTML(toc_paths.web_path),
-                util.unsafeHTML(title),
-            },
-        );
-    }
-    try result.writer().print("</ul>\n", .{});
-}
-
 const FOOTER =
     \\  <footer>
     \\    made with love using <a href="https://github.com/lun-4/obsidian2web">obsidian2web!</a>
     \\  </footer>
 ;
-
-fn tocForPage(build_file: *BuildFile, pages: *PageMap, tree: *PageTree, current_page: []const u8) ![]const u8 {
-    var toc_result = StringList.init(build_file.allocator);
-    defer toc_result.deinit();
-
-    var toc_ctx: TocContext = .{};
-    try generateToc(
-        &toc_result,
-        build_file,
-        pages,
-        &tree.root.getPtr(".").?.dir,
-        &toc_ctx,
-        current_page,
-    );
-
-    return try toc_result.toOwnedSlice();
-}
 
 pub const ArenaHolder = struct {
     paths: std.heap.ArenaAllocator,
