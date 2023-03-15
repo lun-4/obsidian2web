@@ -387,7 +387,7 @@ fn runProcessors(
     page: *Page,
     options: RunProcessorOptions,
 ) !void {
-    logger.info("pass 1: processing {}", .{page});
+    logger.info("running processors processing {} {}", .{ page, options });
 
     var temp_output_path: []const u8 = if (options.pre) blk: {
         std.debug.assert(page.state == .unbuilt);
@@ -417,6 +417,7 @@ fn runProcessors(
         @typeInfo(@typeInfo(@TypeOf(processor_list)).Pointer.child).Struct.fields,
     ) |field| {
         var processor = @field(processor_list, field.name);
+        logger.debug("running {s}", .{@typeName(field.type)});
 
         const output_file_contents = blk: {
             var output_fd = try std.fs.cwd().openFile(

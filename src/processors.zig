@@ -6,6 +6,8 @@ const StringBuffer = root.StringBuffer;
 const logger = std.log.scoped(.obsidian2web_processors);
 const util = @import("util.zig");
 
+const DefaultRegexOptions = .{ .Ucp = true, .Utf8 = true };
+
 /// Wrap checkmarks in <code> HTML blocks.
 pub const CheckmarkProcessor = struct {
     regex: libpcre.Regex,
@@ -14,7 +16,9 @@ pub const CheckmarkProcessor = struct {
     const Self = @This();
 
     pub fn init() !Self {
-        return Self{ .regex = try libpcre.Regex.compile(REGEX, .{}) };
+        return Self{
+            .regex = try libpcre.Regex.compile(REGEX, DefaultRegexOptions),
+        };
     }
 
     pub fn deinit(self: Self) void {
@@ -43,7 +47,9 @@ pub const CrossPageLinkProcessor = struct {
     const Self = @This();
 
     pub fn init() !Self {
-        return Self{ .regex = try libpcre.Regex.compile(REGEX, .{}) };
+        return Self{
+            .regex = try libpcre.Regex.compile(REGEX, DefaultRegexOptions),
+        };
     }
 
     pub fn deinit(self: Self) void {
@@ -97,11 +103,13 @@ pub const TagProcessor = struct {
     regex: libpcre.Regex,
 
     // why doesnt this work on tags in the beginning of the line
-    const REGEX: [:0]const u8 = "#[a-zA-Z0-9-_]+";
+    const REGEX: [:0]const u8 = "#[\\S\\-_]+";
     const Self = @This();
 
     pub fn init() !Self {
-        return Self{ .regex = try libpcre.Regex.compile(REGEX, .{}) };
+        return Self{
+            .regex = try libpcre.Regex.compile(REGEX, DefaultRegexOptions),
+        };
     }
 
     pub fn deinit(self: Self) void {
@@ -154,13 +162,13 @@ pub const TagProcessor = struct {
 pub const TableOfContentsProcessor = struct {
     regex: libpcre.Regex,
 
-    const REGEX: [:0]const u8 = "^(#+) [a-zA-Z0-9-_: ]+";
+    const REGEX: [:0]const u8 = "^(#+) [\\S\\-_: ]+";
     const Self = @This();
 
     pub fn init() !Self {
         return Self{ .regex = try libpcre.Regex.compile(
             REGEX,
-            .{ .Multiline = true },
+            .{ .Ucp = true, .Utf8 = true, .Multiline = true },
         ) };
     }
 
