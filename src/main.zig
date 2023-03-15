@@ -120,7 +120,7 @@ fn writePageTree(
             "<li><a class=\"toc-link\" {s}href=\"{s}\">{s}</a></li>\n",
             .{
                 current_attr,
-                ctx.webPath("/{s}", .{util.unsafeHTML(page_web_path)}),
+                ctx.webPath("/{s}", .{page_web_path}),
                 util.unsafeHTML(page.title),
             },
         );
