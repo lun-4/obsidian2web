@@ -521,7 +521,11 @@ fn mainPass(ctx: *Context, page: *Page) !void {
     defer ctx.allocator.free(input_page_contents);
 
     const options = .{
-        .extensions = .{ .autolink = true, .strikethrough = true },
+        .extensions = .{
+            .autolink = true,
+            .strikethrough = true,
+            .table = true,
+        },
         .render = .{ .hard_breaks = true, .unsafe = true },
     };
 
