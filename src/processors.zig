@@ -1,10 +1,11 @@
 const std = @import("std");
 const libpcre = @import("libpcre");
-const root = @import("root");
+const root = @import("main.zig");
 const ProcessorContext = root.ProcessorContext;
 const StringBuffer = root.StringBuffer;
 const logger = std.log.scoped(.obsidian2web_processors);
 const util = @import("util.zig");
+const Page = @import("Page.zig");
 
 const DefaultRegexOptions = .{ .Ucp = true, .Utf8 = true };
 
@@ -38,6 +39,88 @@ pub const CheckmarkProcessor = struct {
         try pctx.out.print("<code>{s}</code>", .{check});
     }
 };
+
+test "checkmark processor" {
+    // TODO wrap test in more shenanigans for full text match
+    const DATASET = .{
+        .{ "[ ] among us", "<code>[ ]</code>" },
+        .{ "[x] among us", "<code>[x]</code>" },
+    };
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const allocator = std.testing.allocator;
+
+    const build_file = root.BuildFile{
+        .allocator = allocator,
+        .vault_path = undefined,
+        .includes = root.SliceList.init(allocator),
+        .config = .{},
+    };
+    defer build_file.deinit();
+
+    var tmp_dir_realpath_buffer: [std.os.PATH_MAX]u8 = undefined;
+    const tmp_dir_realpath = try tmp.dir.realpath(
+        ".",
+        &tmp_dir_realpath_buffer,
+    );
+
+    var vault_dir = try std.fs.cwd().openIterableDir(tmp_dir_realpath, .{});
+    defer vault_dir.close();
+
+    var ctx = root.Context.init(allocator, build_file, vault_dir);
+    defer ctx.deinit();
+
+    inline for (DATASET) |test_entry| {
+        const input = test_entry.@"0";
+        const expected_output = test_entry.@"1";
+        {
+            var file = try tmp.dir.createFile("test.html", .{});
+            defer file.close();
+            _ = try file.write(input);
+        }
+
+        var file_realpath_buffer: [std.os.PATH_MAX]u8 = undefined;
+        const file_realpath = try tmp.dir.realpath(
+            "test.html",
+            &file_realpath_buffer,
+        );
+
+        var page = Page{
+            .ctx = &ctx,
+            .filesystem_path = file_realpath,
+            .title = "among",
+            .ctime = 0,
+        };
+        defer page.deinit();
+
+        var processor = try CheckmarkProcessor.init();
+        defer processor.deinit();
+
+        var out = root.ByteList.init(allocator);
+        defer out.deinit();
+
+        const Holder = root.Holder(CheckmarkProcessor, root.ByteList.Writer);
+        var last_capture: ?libpcre.Capture = null;
+        const holder = Holder{
+            .ctx = &ctx,
+            .processor = processor,
+            .page = &page,
+            .last_capture = &last_capture,
+            .out = out.writer(),
+        };
+
+        const end_idx = std.mem.indexOf(u8, input, "]").?;
+
+        var caps = [_]?libpcre.Capture{
+            libpcre.Capture{ .start = 0, .end = end_idx + 1 },
+        };
+        try processor.handle(holder, input, &caps);
+
+        try std.testing.expectEqualStrings(expected_output, out.items);
+    }
+}
 
 pub const CrossPageLinkProcessor = struct {
     const REGEX = "\\[\\[.+\\]\\]";

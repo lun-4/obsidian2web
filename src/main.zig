@@ -3,7 +3,7 @@ const koino = @import("koino");
 const libpcre = @import("libpcre");
 
 pub const OwnedStringList = std.ArrayList([]const u8);
-const BuildFile = @import("build_file.zig").BuildFile;
+pub const BuildFile = @import("build_file.zig").BuildFile;
 const processors = @import("processors.zig");
 const util = @import("util.zig");
 
@@ -21,7 +21,7 @@ const TitleMap = std.StringHashMap([]const u8);
 
 const PathTree = @import("./PathTree.zig");
 pub const StringBuffer = std.ArrayList(u8);
-const SliceList = std.ArrayList([]const u8);
+pub const SliceList = std.ArrayList([]const u8);
 
 const TreeGeneratorContext = struct {
     current_folder: ?PathTree.PageFolder = null,
@@ -225,7 +225,7 @@ pub const Context = struct {
     }
 };
 
-const ByteList = std.ArrayList(u8);
+pub const ByteList = std.ArrayList(u8);
 
 // insert into PageTree from the given include paths
 fn iterateVaultPath(ctx: *Context) !void {
@@ -367,7 +367,7 @@ fn deinitProcessors(procs: anytype) void {
 }
 
 // Contains data that will be sent to the processor
-fn Holder(comptime ProcessorT: type, comptime WriterT: type) type {
+pub fn Holder(comptime ProcessorT: type, comptime WriterT: type) type {
     return struct {
         ctx: *Context,
         processor: ProcessorT,

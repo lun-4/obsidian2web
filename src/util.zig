@@ -1,6 +1,6 @@
 const std = @import("std");
 const libpcre = @import("libpcre");
-const main = @import("root");
+const main = @import("main.zig");
 
 pub fn unsafeHTML(data: []const u8) UnsafeHTMLPrinter {
     return UnsafeHTMLPrinter{ .data = data };

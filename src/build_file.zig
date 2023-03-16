@@ -1,6 +1,7 @@
 const std = @import("std");
+const root = @import("main.zig");
 
-const StringList = std.ArrayList([]const u8);
+const StringList = root.SliceList;
 
 pub const ConfigDirectives = struct {
     strict_links: bool = true,
@@ -68,7 +69,7 @@ pub const BuildFile = struct {
         };
     }
 
-    pub fn deinit(self: *Self) void {
+    pub fn deinit(self: Self) void {
         self.includes.deinit();
     }
 };

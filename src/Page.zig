@@ -1,5 +1,5 @@
 const std = @import("std");
-const main = @import("root");
+const main = @import("main.zig");
 const util = @import("util.zig");
 const Context = main.Context;
 const OwnedStringList = main.OwnedStringList;
