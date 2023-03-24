@@ -107,9 +107,38 @@ const TestContext = struct {
     }
 };
 
-fn runTestWithDataset(test_data: anytype) !void {
+fn runTestWithSingleEntry(
+    test_ctx: *TestContext,
+    input: []const u8,
+    expected_output: []const u8,
+) !void {
     const allocator = std.testing.allocator;
+    try test_ctx.createPage(input);
+    try test_ctx.run();
 
+    //var page = try test_ctx.fetchOnlySinglePage();
+    var pages_it = test_ctx.ctx.pages.iterator();
+    var page = pages_it.next().?.value_ptr;
+
+    const htmlpath = try page.fetchHtmlPath(std.testing.allocator);
+    defer std.testing.allocator.free(htmlpath);
+
+    var output_file = try std.fs.cwd().openFile(htmlpath, .{});
+    defer output_file.close();
+    var output_text = try output_file.reader().readAllAlloc(std.testing.allocator, 1024);
+    defer allocator.free(output_text);
+
+    const maybe_found = std.mem.indexOf(u8, output_text, expected_output);
+    if (maybe_found == null) {
+        logger.err(
+            "text '{s}' not found in '{s}'",
+            .{ expected_output, htmlpath },
+        );
+    }
+    try std.testing.expect(maybe_found != null);
+}
+
+fn runTestWithDataset(test_data: anytype) !void {
     inline for (test_data) |test_entry| {
         const input = test_entry.@"0";
         const expected_output = test_entry.@"1";
@@ -117,30 +146,7 @@ fn runTestWithDataset(test_data: anytype) !void {
         var test_ctx = TestContext.init();
         defer test_ctx.deinit();
 
-        try test_ctx.createPage(input);
-        try test_ctx.run();
-
-        //var page = try test_ctx.fetchOnlySinglePage();
-        var pages_it =
-            test_ctx.ctx.pages.iterator();
-        var page = pages_it.next().?.value_ptr;
-
-        const htmlpath = try page.fetchHtmlPath(std.testing.allocator);
-        defer std.testing.allocator.free(htmlpath);
-
-        var output_file = try std.fs.cwd().openFile(htmlpath, .{});
-        defer output_file.close();
-        var output_text = try output_file.reader().readAllAlloc(std.testing.allocator, 1024);
-        defer allocator.free(output_text);
-
-        const maybe_found = std.mem.indexOf(u8, output_text, expected_output);
-        if (maybe_found == null) {
-            logger.err(
-                "text '{s}' not found in '{s}'",
-                .{ expected_output, htmlpath },
-            );
-        }
-        try std.testing.expect(maybe_found != null);
+        try runTestWithSingleEntry(&test_ctx, input, expected_output);
     }
 }
 
@@ -335,8 +341,25 @@ pub const TableOfContentsProcessor = struct {
 
 test "table of contents processor" {
     const TEST_DATA = .{
-        .{ "# awooga", "<h1 id=\"awooga\">awooga <a href=\"#awooga\">#</a></h1>" },
+        .{ "# awooga", "<h1 id=\"awooga\">awooga <a href=\"#awooga\">#</a></h1>", "awooga" },
     };
 
-    try runTestWithDataset(TEST_DATA);
+    inline for (TEST_DATA) |test_entry| {
+        const input = test_entry.@"0";
+        const expected_output = test_entry.@"1";
+        const expected_title_entry = test_entry.@"2";
+
+        var test_ctx = TestContext.init();
+        defer test_ctx.deinit();
+
+        try runTestWithSingleEntry(&test_ctx, input, expected_output);
+
+        var pages_it = test_ctx.ctx.pages.iterator();
+        var page = pages_it.next().?.value_ptr;
+        try std.testing.expectEqualSlices(
+            u8,
+            expected_title_entry,
+            page.titles.?.items[0],
+        );
+    }
 }
