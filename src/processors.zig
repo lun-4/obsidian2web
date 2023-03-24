@@ -137,7 +137,7 @@ fn runTestWithDataset(test_data: anytype) !void {
         if (maybe_found == null) {
             logger.err(
                 "text '{s}' not found in '{s}'",
-                .{ expected_output, page.filesystem_path },
+                .{ expected_output, htmlpath },
             );
         }
         try std.testing.expect(maybe_found != null);
@@ -145,7 +145,6 @@ fn runTestWithDataset(test_data: anytype) !void {
 }
 
 test "checkmark processor" {
-    // TODO wrap test in more shenanigans for full text match
     const TEST_DATA = .{
         .{ "[ ] among us", "<code>[ ]</code> among us" },
         .{ "[x] among us", "<code>[x]</code> among us" },
@@ -273,6 +272,14 @@ pub const TagProcessor = struct {
         );
     }
 };
+
+test "tag processor" {
+    const TEST_DATA = .{
+        .{ "#awooga", "<a href=\"/_/tags/awooga.html\">#awooga</a>" },
+    };
+
+    try runTestWithDataset(TEST_DATA);
+}
 
 pub const TableOfContentsProcessor = struct {
     regex: libpcre.Regex,
