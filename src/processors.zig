@@ -40,86 +40,118 @@ pub const CheckmarkProcessor = struct {
     }
 };
 
-test "checkmark processor" {
-    // TODO wrap test in more shenanigans for full text match
-    const DATASET = .{
-        .{ "[ ] among us", "<code>[ ]</code>" },
-        .{ "[x] among us", "<code>[x]</code>" },
-    };
+var tmp_dir_realpath_buffer: [std.os.PATH_MAX]u8 = undefined;
+const TestContext = struct {
+    ctx: root.Context,
+    tmp_dir: std.testing.TmpIterableDir,
+    build_file: root.BuildFile,
 
-    var tmp = std.testing.tmpDir(.{});
-    defer tmp.cleanup();
-
+    const Self = @This();
     const allocator = std.testing.allocator;
 
-    const build_file = root.BuildFile{
-        .allocator = allocator,
-        .vault_path = undefined,
-        .includes = root.SliceList.init(allocator),
-        .config = .{},
-    };
-    defer build_file.deinit();
+    pub fn init() TestContext {
+        var tmp_dir = std.testing.tmpIterableDir(.{});
 
-    var tmp_dir_realpath_buffer: [std.os.PATH_MAX]u8 = undefined;
-    const tmp_dir_realpath = try tmp.dir.realpath(
-        ".",
-        &tmp_dir_realpath_buffer,
-    );
+        const tmp_dir_realpath = tmp_dir.iterable_dir.dir.realpath(
+            ".",
+            &tmp_dir_realpath_buffer,
+        ) catch unreachable;
 
-    var vault_dir = try std.fs.cwd().openIterableDir(tmp_dir_realpath, .{});
-    defer vault_dir.close();
+        var build_file = root.BuildFile{
+            .allocator = allocator,
+            .vault_path = tmp_dir_realpath,
+            .includes = root.SliceList.init(allocator),
+            .config = .{},
+        };
 
-    var ctx = root.Context.init(allocator, build_file, vault_dir);
-    defer ctx.deinit();
+        build_file.includes.append(".") catch unreachable;
 
-    inline for (DATASET) |test_entry| {
+        var ctx = root.Context.init(allocator, build_file, tmp_dir.iterable_dir);
+
+        return TestContext{
+            .ctx = ctx,
+            .tmp_dir = tmp_dir,
+            .build_file = build_file,
+        };
+    }
+
+    pub fn createPage(self: *Self, data: []const u8) !void {
+        // TODO randomised path for multi page support
+        var file = try self.tmp_dir.iterable_dir.dir.createFile("test.md", .{});
+        defer file.close();
+        _ = try file.write(data);
+    }
+
+    pub fn deinit(self: *Self) void {
+        self.build_file.deinit();
+        self.ctx.deinit();
+        //self.tmp_dir.cleanup();
+    }
+
+    pub fn run(self: *Self) !void {
+        try root.iterateVaultPath(&self.ctx);
+        try std.fs.cwd().makePath("public/");
+
+        var pre_processors = try root.initProcessors(root.PreProcessors);
+        defer root.deinitProcessors(pre_processors);
+
+        var post_processors = try root.initProcessors(root.PostProcessors);
+        defer root.deinitProcessors(post_processors);
+
+        var pages_it = self.ctx.pages.iterator();
+        while (pages_it.next()) |entry| {
+            try root.runProcessors(&self.ctx, &pre_processors, entry.value_ptr, .{ .pre = true });
+            try root.mainPass(&self.ctx, entry.value_ptr);
+            try root.runProcessors(&self.ctx, &post_processors, entry.value_ptr, .{});
+        }
+    }
+};
+
+fn runTestWithDataset(test_data: anytype) !void {
+    const allocator = std.testing.allocator;
+
+    inline for (test_data) |test_entry| {
         const input = test_entry.@"0";
         const expected_output = test_entry.@"1";
-        {
-            var file = try tmp.dir.createFile("test.html", .{});
-            defer file.close();
-            _ = try file.write(input);
+
+        var test_ctx = TestContext.init();
+        defer test_ctx.deinit();
+
+        try test_ctx.createPage(input);
+        try test_ctx.run();
+
+        //var page = try test_ctx.fetchOnlySinglePage();
+        var pages_it =
+            test_ctx.ctx.pages.iterator();
+        var page = pages_it.next().?.value_ptr;
+
+        const htmlpath = try page.fetchHtmlPath(std.testing.allocator);
+        defer std.testing.allocator.free(htmlpath);
+
+        var output_file = try std.fs.cwd().openFile(htmlpath, .{});
+        defer output_file.close();
+        var output_text = try output_file.reader().readAllAlloc(std.testing.allocator, 1024);
+        defer allocator.free(output_text);
+
+        const maybe_found = std.mem.indexOf(u8, output_text, expected_output);
+        if (maybe_found == null) {
+            logger.err(
+                "text '{s}' not found in '{s}'",
+                .{ expected_output, page.filesystem_path },
+            );
         }
-
-        var file_realpath_buffer: [std.os.PATH_MAX]u8 = undefined;
-        const file_realpath = try tmp.dir.realpath(
-            "test.html",
-            &file_realpath_buffer,
-        );
-
-        var page = Page{
-            .ctx = &ctx,
-            .filesystem_path = file_realpath,
-            .title = "among",
-            .ctime = 0,
-        };
-        defer page.deinit();
-
-        var processor = try CheckmarkProcessor.init();
-        defer processor.deinit();
-
-        var out = root.ByteList.init(allocator);
-        defer out.deinit();
-
-        const Holder = root.Holder(CheckmarkProcessor, root.ByteList.Writer);
-        var last_capture: ?libpcre.Capture = null;
-        const holder = Holder{
-            .ctx = &ctx,
-            .processor = processor,
-            .page = &page,
-            .last_capture = &last_capture,
-            .out = out.writer(),
-        };
-
-        const end_idx = std.mem.indexOf(u8, input, "]").?;
-
-        var caps = [_]?libpcre.Capture{
-            libpcre.Capture{ .start = 0, .end = end_idx + 1 },
-        };
-        try processor.handle(holder, input, &caps);
-
-        try std.testing.expectEqualStrings(expected_output, out.items);
+        try std.testing.expect(maybe_found != null);
     }
+}
+
+test "checkmark processor" {
+    // TODO wrap test in more shenanigans for full text match
+    const TEST_DATA = .{
+        .{ "[ ] among us", "<code>[ ]</code> among us" },
+        .{ "[x] among us", "<code>[x]</code> among us" },
+    };
+
+    try runTestWithDataset(TEST_DATA);
 }
 
 pub const CrossPageLinkProcessor = struct {

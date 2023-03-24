@@ -228,7 +228,7 @@ pub const Context = struct {
 pub const ByteList = std.ArrayList(u8);
 
 // insert into PageTree from the given include paths
-fn iterateVaultPath(ctx: *Context) !void {
+pub fn iterateVaultPath(ctx: *Context) !void {
     for (ctx.build_file.includes.items) |relative_include_path| {
         const absolute_include_path = try std.fs.path.resolve(
             ctx.allocator,
@@ -342,17 +342,17 @@ pub fn main() anyerror!void {
     try generateTagPages(ctx);
 }
 
-const PostProcessors = struct {
+pub const PostProcessors = struct {
     checkmark: processors.CheckmarkProcessor,
     cross_page_link: processors.CrossPageLinkProcessor,
 };
 
-const PreProcessors = struct {
+pub const PreProcessors = struct {
     tag: processors.TagProcessor,
     page_toc: processors.TableOfContentsProcessor,
 };
 
-fn initProcessors(comptime ProcessorHolderT: type) !ProcessorHolderT {
+pub fn initProcessors(comptime ProcessorHolderT: type) !ProcessorHolderT {
     var proc: ProcessorHolderT = undefined;
     inline for (@typeInfo(ProcessorHolderT).Struct.fields) |field| {
         @field(proc, field.name) = try field.type.init();
@@ -360,7 +360,7 @@ fn initProcessors(comptime ProcessorHolderT: type) !ProcessorHolderT {
     return proc;
 }
 
-fn deinitProcessors(procs: anytype) void {
+pub fn deinitProcessors(procs: anytype) void {
     inline for (@typeInfo(@TypeOf(procs)).Struct.fields) |field| {
         field.type.deinit(@field(procs, field.name));
     }
@@ -381,7 +381,7 @@ const RunProcessorOptions = struct {
     pre: bool = false,
 };
 
-fn runProcessors(
+pub fn runProcessors(
     ctx: *Context,
     processor_list: anytype,
     page: *Page,
@@ -500,7 +500,7 @@ fn runProcessors(
     }
 }
 
-fn mainPass(ctx: *Context, page: *Page) !void {
+pub fn mainPass(ctx: *Context, page: *Page) !void {
     logger.info("processing '{s}'", .{page.filesystem_path});
 
     // TODO find a way to feed chunks of file to koino
