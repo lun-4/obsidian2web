@@ -332,3 +332,11 @@ pub const TableOfContentsProcessor = struct {
         );
     }
 };
+
+test "table of contents processor" {
+    const TEST_DATA = .{
+        .{ "# awooga", "<h1 id=\"awooga\">awooga <a href=\"#awooga\">#</a></h1>" },
+    };
+
+    try runTestWithDataset(TEST_DATA);
+}
