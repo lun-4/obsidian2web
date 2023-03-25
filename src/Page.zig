@@ -60,6 +60,7 @@ pub fn format(
 }
 
 pub fn relativePath(self: Self) []const u8 {
+    std.debug.assert(std.mem.startsWith(u8, self.filesystem_path, self.ctx.build_file.vault_path));
     const relative_fspath = self.filesystem_path[self.ctx.build_file.vault_path.len + 1 ..];
     std.debug.assert(relative_fspath[0] != '/'); // must be relative
     return relative_fspath;
