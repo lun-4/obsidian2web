@@ -166,3 +166,8 @@ pub const WebTitlePrinter = struct {
         }
     }
 };
+
+pub fn stripLeft(text: []const u8, strip: []const u8) []const u8 {
+    std.debug.assert(std.mem.startsWith(u8, text, strip));
+    return text[strip.len..];
+}

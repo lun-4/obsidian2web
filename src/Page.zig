@@ -60,8 +60,7 @@ pub fn format(
 }
 
 pub fn relativePath(self: Self) []const u8 {
-    std.debug.assert(std.mem.startsWith(u8, self.filesystem_path, self.ctx.build_file.vault_path));
-    const relative_fspath = self.filesystem_path[self.ctx.build_file.vault_path.len + 1 ..];
+    const relative_fspath = util.stripLeft(self.filesystem_path, self.ctx.build_file.vault_path)[1..];
     std.debug.assert(relative_fspath[0] != '/'); // must be relative
     return relative_fspath;
 }
@@ -96,8 +95,7 @@ pub fn fetchWebPath(
     //  - replace std.fs.path.sep to '/'
     //  - Uri.escapeString
 
-    var trimmed_output_path = std.mem.trimLeft(
-        u8,
+    var trimmed_output_path = util.stripLeft(
         output_path,
         "public" ++ std.fs.path.sep_str,
     );
