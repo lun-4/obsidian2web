@@ -82,9 +82,45 @@ pub const PageAttributes = struct {
         return self;
     }
 
-    test "parses ctime correctly" {
+    test "fallbacks to system ctime" {
         const This = @This();
         std.testing.log_level = .debug;
+
+        var tmp_dir = std.testing.tmpDir(.{});
+        defer tmp_dir.cleanup();
+
+        const current_time = std.time.timestamp();
+        var file = try tmp_dir.dir.createFile("test.md", .{ .read = true });
+        defer file.close();
+
+        const attrs = try This.fromFile(file);
+
+        const delta = try std.math.absInt(attrs.ctime - current_time);
+        logger.debug("curtime = {d}", .{current_time});
+        logger.debug("ctime = {d}", .{attrs.ctime});
+        logger.debug("delta = {d}", .{delta});
+        try std.testing.expect(delta < 10);
+
+        const date_from_attrs = (std.time.epoch.EpochSeconds{
+            .secs = @intCast(u64, attrs.ctime),
+        }).getEpochDay().calculateYearDay();
+        const date_from_curtime = (std.time.epoch.EpochSeconds{
+            .secs = @intCast(u64, current_time),
+        }).getEpochDay().calculateYearDay();
+
+        try std.testing.expectEqual(date_from_curtime.day, date_from_attrs.day);
+        try std.testing.expectEqual(date_from_curtime.year, date_from_attrs.year);
+
+        const month_from_curtime = date_from_curtime.calculateMonthDay();
+
+        const naive_dt = try chrono.NaiveDateTime.from_timestamp(attrs.ctime, 0);
+        try std.testing.expectEqual(date_from_curtime.year, @intCast(u16, naive_dt.date.year()));
+        try std.testing.expectEqual(month_from_curtime.month.numeric(), naive_dt.date.month().number());
+        try std.testing.expectEqual(month_from_curtime.day_index + 1, naive_dt.date.day());
+    }
+
+    test "parses ctime" {
+        const This = @This();
 
         var tmp_dir = std.testing.tmpDir(.{});
         defer tmp_dir.cleanup();
@@ -101,7 +137,19 @@ pub const PageAttributes = struct {
         const attrs = try This.fromFile(file);
         const naive_dt = try chrono.NaiveDateTime.from_timestamp(attrs.ctime, 0);
 
-        try std.testing.expectEqual(@as(i19, 2023), naive_dt.date._year);
+        try std.testing.expectEqual(@as(i19, 2023), naive_dt.date.year());
+        try std.testing.expectEqual(@as(i19, 3), naive_dt.date.month().number());
+        try std.testing.expectEqual(@as(i19, 4), naive_dt.date.day());
+
+        const date_from_attrs = (std.time.epoch.EpochSeconds{
+            .secs = @intCast(u64, attrs.ctime),
+        }).getEpochDay().calculateYearDay();
+
+        const month_from_attrs = date_from_attrs.calculateMonthDay();
+
+        try std.testing.expectEqual(@as(i19, 2023), date_from_attrs.year);
+        try std.testing.expectEqual(@as(i19, 3), month_from_attrs.month.numeric());
+        try std.testing.expectEqual(@as(i19, 4), month_from_attrs.day_index + 1);
     }
 };
 
