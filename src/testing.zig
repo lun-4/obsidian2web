@@ -69,11 +69,12 @@ pub const TestContext = struct {
 
 pub fn runTestWithSingleEntry(
     test_ctx: *TestContext,
+    comptime title: []const u8,
     input: []const u8,
     expected_output: []const u8,
 ) !void {
     const allocator = std.testing.allocator;
-    try test_ctx.createPage("test", input);
+    try test_ctx.createPage(title, input);
     try test_ctx.run();
 
     //var page = try test_ctx.fetchOnlySinglePage();
@@ -100,12 +101,13 @@ pub fn runTestWithSingleEntry(
 
 pub fn runTestWithDataset(test_data: anytype) !void {
     inline for (test_data) |test_entry| {
+        comptime std.debug.assert(test_entry.len == 2);
         const input = test_entry.@"0";
         const expected_output = test_entry.@"1";
 
         var test_ctx = TestContext.init();
         defer test_ctx.deinit();
 
-        try runTestWithSingleEntry(&test_ctx, input, expected_output);
+        try runTestWithSingleEntry(&test_ctx, "test", input, expected_output);
     }
 }

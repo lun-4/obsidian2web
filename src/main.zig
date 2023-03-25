@@ -128,6 +128,24 @@ fn writePageTree(
     try writer.print("</ul>\n", .{});
 }
 
+const testing = @import("testing.zig");
+test "page tree sets aria-current" {
+    const TEST_DATA = .{
+        .{ "awoogapage", "", "<a class=\"toc-link\" aria-current=\"page\" href=\"/awoogapage.html\">awoogapage</a>" },
+    };
+
+    inline for (TEST_DATA) |test_entry| {
+        const title = test_entry.@"0";
+        const input = test_entry.@"1";
+        const expected_output = test_entry.@"2";
+
+        var test_ctx = testing.TestContext.init();
+        defer test_ctx.deinit();
+
+        try testing.runTestWithSingleEntry(&test_ctx, title, input, expected_output);
+    }
+}
+
 const FOOTER =
     \\  <footer>
     \\    made with love using <a href="https://github.com/lun-4/obsidian2web">obsidian2web!</a>

@@ -233,7 +233,7 @@ test "tag processor" {
         var test_ctx = testing.TestContext.init();
         defer test_ctx.deinit();
 
-        try testing.runTestWithSingleEntry(&test_ctx, input, expected_output);
+        try testing.runTestWithSingleEntry(&test_ctx, "test", input, expected_output);
 
         var pages_it = test_ctx.ctx.pages.iterator();
         var page = pages_it.next().?.value_ptr;
@@ -310,7 +310,7 @@ test "table of contents processor" {
         var test_ctx = testing.TestContext.init();
         defer test_ctx.deinit();
 
-        try testing.runTestWithSingleEntry(&test_ctx, input, expected_output);
+        try testing.runTestWithSingleEntry(&test_ctx, "test", input, expected_output);
 
         var pages_it = test_ctx.ctx.pages.iterator();
         var page = pages_it.next().?.value_ptr;
