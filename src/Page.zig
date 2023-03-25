@@ -112,7 +112,6 @@ pub fn fetchWebPath(
         "/",
     );
     defer allocator.free(trimmed_output_path_2);
-
     const web_path = try customEscapeString(allocator, trimmed_output_path_2);
     return web_path;
 }

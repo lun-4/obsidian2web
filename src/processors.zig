@@ -75,9 +75,8 @@ const TestContext = struct {
         };
     }
 
-    pub fn createPage(self: *Self, data: []const u8) !void {
-        // TODO randomised path for multi page support
-        var file = try self.tmp_dir.iterable_dir.dir.createFile("test.md", .{});
+    pub fn createPage(self: *Self, comptime title: []const u8, data: []const u8) !void {
+        var file = try self.tmp_dir.iterable_dir.dir.createFile(title ++ ".md", .{});
         defer file.close();
         _ = try file.write(data);
     }
@@ -113,7 +112,7 @@ fn runTestWithSingleEntry(
     expected_output: []const u8,
 ) !void {
     const allocator = std.testing.allocator;
-    try test_ctx.createPage(input);
+    try test_ctx.createPage("test", input);
     try test_ctx.run();
 
     //var page = try test_ctx.fetchOnlySinglePage();
@@ -198,6 +197,12 @@ pub const CrossPageLinkProcessor = struct {
             var referenced_page = ctx.pages.get(page_local_path).?;
             var web_path = try referenced_page.fetchWebPath(pctx.ctx.allocator);
             defer pctx.ctx.allocator.free(web_path);
+
+            logger.debug(
+                "{s} has link to web path '{s}'",
+                .{ pctx.page.title, web_path },
+            );
+
             try pctx.out.print(
                 "<a href=\"{}\">{s}</a>",
                 .{
@@ -218,6 +223,50 @@ pub const CrossPageLinkProcessor = struct {
         }
     }
 };
+
+test "cross page link processor" {
+    const TEST_DATA = .{
+        .{ "awooga1", "[[awooga2]]", "<a href=\"/awooga2.html\">awooga2</a>" },
+        .{ "awooga2", "[[awooga1]]", "<a href=\"/awooga1.html\">awooga1</a>" },
+    };
+
+    const allocator = std.testing.allocator;
+
+    var test_ctx = TestContext.init();
+    defer test_ctx.deinit();
+
+    inline for (TEST_DATA) |test_entry| {
+        const page_title = test_entry.@"0";
+        const page_input = test_entry.@"1";
+        try test_ctx.createPage(page_title, page_input);
+    }
+
+    try test_ctx.run();
+
+    inline for (TEST_DATA) |test_entry| {
+        const page_title = test_entry.@"0";
+        const expected_page_output = test_entry.@"2";
+
+        const page = test_ctx.ctx.pageFromTitle(page_title).?;
+
+        const htmlpath = try page.fetchHtmlPath(std.testing.allocator);
+        defer std.testing.allocator.free(htmlpath);
+
+        var output_file = try std.fs.cwd().openFile(htmlpath, .{});
+        defer output_file.close();
+        var output_text = try output_file.reader().readAllAlloc(std.testing.allocator, 1024);
+        defer allocator.free(output_text);
+
+        const maybe_found = std.mem.indexOf(u8, output_text, expected_page_output);
+        if (maybe_found == null) {
+            logger.err("text '{s}' not found in '{s}'", .{
+                expected_page_output,
+                htmlpath,
+            });
+        }
+        try std.testing.expect(maybe_found != null);
+    }
+}
 
 pub const TagProcessor = struct {
     regex: libpcre.Regex,
@@ -281,10 +330,27 @@ pub const TagProcessor = struct {
 
 test "tag processor" {
     const TEST_DATA = .{
-        .{ "#awooga", "<a href=\"/_/tags/awooga.html\">#awooga</a>" },
+        .{ "#awooga", "<a href=\"/_/tags/awooga.html\">#awooga</a>", "awooga" },
     };
 
-    try runTestWithDataset(TEST_DATA);
+    inline for (TEST_DATA) |test_entry| {
+        const input = test_entry.@"0";
+        const expected_output = test_entry.@"1";
+        const expected_tag_entry = test_entry.@"2";
+
+        var test_ctx = TestContext.init();
+        defer test_ctx.deinit();
+
+        try runTestWithSingleEntry(&test_ctx, input, expected_output);
+
+        var pages_it = test_ctx.ctx.pages.iterator();
+        var page = pages_it.next().?.value_ptr;
+        try std.testing.expectEqualSlices(
+            u8,
+            expected_tag_entry,
+            page.tags.?.items[0],
+        );
+    }
 }
 
 pub const TableOfContentsProcessor = struct {

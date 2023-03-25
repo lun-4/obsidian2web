@@ -204,12 +204,12 @@ pub const Context = struct {
         }
     }
 
-    pub fn pageFromPath(self: Self, path: []const u8) !?Page {
+    pub fn pageFromPath(self: Self, path: []const u8) ?Page {
         return self.pages.get(path);
     }
 
-    pub fn pageFromTitle(self: Self, title: []const u8) !?Page {
-        return self.pages.get(self.titles.get(title));
+    pub fn pageFromTitle(self: Self, title: []const u8) ?Page {
+        return self.pages.get(self.titles.get(title) orelse return null);
     }
 
     pub fn webPath(
