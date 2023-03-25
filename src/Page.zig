@@ -1,6 +1,7 @@
 const std = @import("std");
 const main = @import("main.zig");
 const util = @import("util.zig");
+const chrono = @import("chrono");
 const Context = main.Context;
 const OwnedStringList = main.OwnedStringList;
 const logger = std.log.scoped(.obsidian2web_page);
@@ -8,7 +9,7 @@ const logger = std.log.scoped(.obsidian2web_page);
 ctx: *const Context,
 filesystem_path: []const u8,
 title: []const u8,
-ctime: i128,
+attributes: PageAttributes,
 
 tags: ?OwnedStringList = null,
 titles: ?OwnedStringList = null,
@@ -23,16 +24,101 @@ pub const State = union(enum) {
     post: void,
 };
 
+pub const PageAttributes = struct {
+    ctime: i64,
+
+    fn parseString(data: []const u8) []const u8 {
+        return std.mem.trim(u8, data, "\"");
+    }
+
+    fn parseDate(date_string: []const u8) !i64 {
+        var it = std.mem.split(u8, date_string, "-");
+        const year = try std.fmt.parseInt(std.time.epoch.Year, it.next().?, 10);
+        const month_int = try std.fmt.parseInt(u4, it.next().?, 10);
+        const month = try std.meta.intToEnum(std.time.epoch.Month, month_int);
+        const day = try std.fmt.parseInt(u5, it.next().?, 10);
+
+        logger.warn("{d} - {} - {d}", .{ year, month, day });
+        const naive_dt = try chrono.NaiveDateTime.ymd_hms(year, month.numeric(), day, 0, 0, 0);
+        logger.debug("dt {}", .{naive_dt.date});
+        const dt = chrono.DateTime.utc(naive_dt, chrono.timezone.UTC);
+        logger.debug("dt {}", .{dt});
+        logger.debug("dt ts {}", .{dt.toTimestamp()});
+        return dt.toTimestamp();
+    }
+
+    pub fn fromFile(file: std.fs.File) !@This() {
+        var stat = try file.stat();
+        var self = @This(){
+            .ctime = @intCast(i64, @divTrunc(stat.ctime, std.time.ns_per_s)),
+        };
+        var first_bytes_buffer: [256]u8 = undefined;
+
+        const bytes_read = try file.reader().read(&first_bytes_buffer);
+        const first_bytes = first_bytes_buffer[0..bytes_read];
+
+        logger.debug("first '{s}'", .{first_bytes});
+        const first_plus_sign_idx = std.mem.indexOf(u8, first_bytes, "+++") orelse return self;
+        const last_plus_sign_idx = std.mem.indexOfPos(u8, first_bytes, first_plus_sign_idx + 1, "+++") orelse return self;
+
+        logger.debug("idx {d} {d}", .{ first_plus_sign_idx, last_plus_sign_idx });
+        const attributes_text = first_bytes[first_plus_sign_idx + 3 .. last_plus_sign_idx];
+        var lines = std.mem.split(u8, attributes_text, "\n");
+        logger.debug("text '{s}'", .{attributes_text});
+        while (lines.next()) |line| {
+            if (line.len == 0) continue;
+            var key_value_iterator = std.mem.split(u8, line, "=");
+            const key = std.mem.trim(u8, key_value_iterator.next() orelse continue, " ");
+            const value = std.mem.trim(u8, key_value_iterator.next() orelse {
+                logger.err("key '{s}' does not have value", .{key});
+                return error.InvalidAttribute;
+            }, " ");
+
+            if (std.mem.eql(u8, key, "date")) {
+                const date_string = parseString(value);
+                self.ctime = try parseDate(date_string);
+            }
+        }
+        return self;
+    }
+
+    test "parses ctime correctly" {
+        const This = @This();
+        std.testing.log_level = .debug;
+
+        var tmp_dir = std.testing.tmpDir(.{});
+        defer tmp_dir.cleanup();
+
+        var file = try tmp_dir.dir.createFile("test.md", .{ .read = true });
+        defer file.close();
+
+        try file.writeAll(
+            \\+++
+            \\date="2023-03-04"
+            \\+++
+        );
+        try file.seekTo(0);
+        const attrs = try This.fromFile(file);
+        const naive_dt = try chrono.NaiveDateTime.from_timestamp(attrs.ctime, 0);
+
+        try std.testing.expectEqual(@as(i19, 2023), naive_dt.date._year);
+    }
+};
+
 /// assumes given path is a ".md" file.
 pub fn fromPath(ctx: *const Context, fspath: []const u8) !Self {
     const title_raw = std.fs.path.basename(fspath);
     const title = title_raw[0 .. title_raw.len - 3];
     logger.info("create page with title '{s}' @ {s}", .{ title, fspath });
-    var stat = try std.fs.cwd().statFile(fspath);
+
+    var file = try std.fs.cwd().openFile(fspath, .{});
+    defer file.close();
+    const attributes = try PageAttributes.fromFile(file);
+
     return Self{
         .ctx = ctx,
         .filesystem_path = fspath,
-        .ctime = stat.ctime,
+        .attributes = attributes,
         .title = title,
     };
 }

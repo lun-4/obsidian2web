@@ -3,4 +3,5 @@ git https://github.com/kivikakk/htmlentities.zig commit-311c844c1d1d1cb968eedfeb
 git https://github.com/kivikakk/koino commit-ea64a3bb1fea87539f46bc35a66a6d4f99223d9b
 git https://github.com/kivikakk/libpcre.zig commit-76688fbfb88be3d28fdada1ecbb87aacb6191f89
 git https://github.com/kivikakk/zunicode commit-5bf4a3a5f0c6e3d96f6def56957ab7f201851c50
+git https://github.com/leroycep/chrono-zig commit-532f1ce1ed1f32d9e7d85a5f2beb0fbfff192bf5
 git https://github.com/nektro/pcre-8.45 commit-10bc0a2fd91f3a40be9825738661f8748eb60e14

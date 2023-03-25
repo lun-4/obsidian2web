@@ -708,7 +708,7 @@ fn generateTagPages(ctx: Context) !void {
         std.sort.sort(*const Page, entry.value_ptr.items, {}, struct {
             fn inner(context: void, a: *const Page, b: *const Page) bool {
                 _ = context;
-                return a.ctime < b.ctime;
+                return a.attributes.ctime < b.attributes.ctime;
             }
         }.inner);
 

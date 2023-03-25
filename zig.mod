@@ -6,6 +6,9 @@ root_dependencies:
   - name: libpcre
     main: src/main.zig
     src: git https://github.com/kivikakk/libpcre.zig
+  - name: chrono
+    main: src/lib.zig
+    src: git https://github.com/lun-4/chrono-zig branch-luna-fix-master-zig
   - src: git https://github.com/kivikakk/koino
     name: koino
     main: src/koino.zig
