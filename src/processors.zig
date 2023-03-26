@@ -164,8 +164,7 @@ pub const TagProcessor = struct {
     regex: libpcre.Regex,
 
     // TODO why doesnt this work on tags in the beginning of the line
-    // TODO we shouldnt apply this to <code> blocks
-    const REGEX: [:0]const u8 = "#[\\S\\-_]+";
+    const REGEX: [:0]const u8 = "#[\\w\\-_]+";
     const Self = @This();
 
     pub fn init() !Self {
@@ -195,7 +194,8 @@ pub const TagProcessor = struct {
         // rather than doing it in code like this lmao
 
         const first_character = if (full_match.start == 0) ' ' else file_contents[full_match.start - 1];
-        if (first_character != ' ' and first_character != '>') {
+        if (first_character != ' ' and first_character != '\n') {
+            logger.warn("ignoring '{s}' firstchar '{s}'", .{ raw_text, &[_]u8{first_character} });
             return try pctx.out.print("{s}", .{raw_text});
         }
 
@@ -246,6 +246,8 @@ test "tag processor" {
     }
 }
 
+// using this because if we dont do it then the tag processor will process
+// comments inside code, and we dont want that.
 pub const EscapeHashtagsInCode = struct {
     regex: libpcre.Regex,
 
