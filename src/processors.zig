@@ -246,6 +246,38 @@ test "tag processor" {
     }
 }
 
+pub const EscapeHashtagsInCode = struct {
+    regex: libpcre.Regex,
+
+    const REGEX = "```([\\w\\W]+)```";
+    const Self = @This();
+
+    pub fn init() !Self {
+        return Self{
+            .regex = try libpcre.Regex.compile(REGEX, DefaultRegexOptions),
+        };
+    }
+
+    pub fn deinit(self: Self) void {
+        self.regex.deinit();
+    }
+
+    pub fn handle(
+        self: Self,
+        /// Processor context. `pctx.ctx` gives Context
+        pctx: anytype,
+        file_contents: []const u8,
+        captures: []?libpcre.Capture,
+    ) !void {
+        _ = self;
+        const full_match = captures[0].?;
+        const raw_text = file_contents[full_match.start..full_match.end];
+        logger.warn("codeblock {s}", .{raw_text});
+
+        try util.fastWriteReplace(pctx.out, raw_text, "#", "&#35;");
+    }
+};
+
 pub const TableOfContentsProcessor = struct {
     regex: libpcre.Regex,
 
@@ -393,7 +425,10 @@ pub const CodeHighlighterProcessor = struct {
         defer ctx.allocator.free(result.stdout);
         defer ctx.allocator.free(result.stderr);
 
-        logger.debug("stdout {d}, stderr {d}", .{ result.stdout.len, result.stderr.len });
+        logger.debug(
+            "pygments sent stdout {d} bytes, stderr {d} bytes",
+            .{ result.stdout.len, result.stderr.len },
+        );
 
         switch (result.term) {
             .Exited => |code| if (code != 0) {
@@ -406,10 +441,16 @@ pub const CodeHighlighterProcessor = struct {
             },
         }
 
-        // TODO why tf this emits &quot; and i see &quot; in the browser
-        // lmao
+        var tmpfile = try std.fs.cwd().createFile("/tmp/test", .{ .read = true });
+        defer tmpfile.close();
 
-        try util.fastWriteReplace(pctx.out, result.stdout, "&amp;", "&");
+        // TODO why tf pygments emits &amp;quot; insteadd of &quot; lmfao
+        // i have to run it twice because of brokeen architecture mess
+        try util.fastWriteReplace(tmpfile.writer(), result.stdout, "&amp;", "&");
+        try tmpfile.seekTo(0);
+        const tmpfile_after_replace = try tmpfile.reader().readAllAlloc(pctx.ctx.allocator, std.math.maxInt(usize));
+        defer pctx.ctx.allocator.free(tmpfile_after_replace);
+        try util.fastWriteReplace(pctx.out, tmpfile_after_replace, "&amp;", "&");
     }
 };
 

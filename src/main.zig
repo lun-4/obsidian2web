@@ -367,6 +367,7 @@ pub const PostProcessors = struct {
 };
 
 pub const PreProcessors = struct {
+    escape_hashtags_in_code: processors.EscapeHashtagsInCode,
     tag: processors.TagProcessor,
     page_toc: processors.TableOfContentsProcessor,
 };
