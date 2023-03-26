@@ -106,6 +106,43 @@ pub fn WebPathPrinter(comptime ArgsT: anytype, comptime fmt: []const u8) type {
     };
 }
 
+pub fn fastWriteReplace(
+    writer: anytype,
+    input: []const u8,
+    replace_from: []const u8,
+    replace_to: []const u8,
+) !void {
+    var current_pos: usize = 0;
+    var last_capture: ?libpcre.Capture = null;
+
+    while (true) {
+        const maybe_found_at = std.mem.indexOfPos(
+            u8,
+            input,
+            current_pos,
+            replace_from,
+        );
+
+        if (maybe_found_at) |found_at| {
+            if (last_capture == null)
+                try writer.writeAll(input[0..found_at])
+            else
+                try writer.writeAll(input[last_capture.?.end..found_at]);
+
+            try writer.writeAll(replace_to);
+            last_capture = .{ .start = found_at, .end = found_at + replace_from.len };
+            current_pos = last_capture.?.end;
+        } else {
+            break;
+        }
+    }
+
+    if (last_capture == null)
+        try writer.writeAll(input)
+    else
+        try writer.writeAll(input[last_capture.?.end..input.len]);
+}
+
 /// Caller owns returned memory.
 pub fn replaceStrings(
     allocator: std.mem.Allocator,

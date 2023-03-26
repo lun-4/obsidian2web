@@ -86,7 +86,7 @@ pub fn runTestWithSingleEntry(
 
     var output_file = try std.fs.cwd().openFile(htmlpath, .{});
     defer output_file.close();
-    var output_text = try output_file.reader().readAllAlloc(std.testing.allocator, 1024);
+    var output_text = try output_file.reader().readAllAlloc(std.testing.allocator, 1024 * 1024);
     defer allocator.free(output_text);
 
     const maybe_found = std.mem.indexOf(u8, output_text, expected_output);

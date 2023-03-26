@@ -363,6 +363,7 @@ pub fn main() anyerror!void {
 pub const PostProcessors = struct {
     checkmark: processors.CheckmarkProcessor,
     cross_page_link: processors.CrossPageLinkProcessor,
+    code: processors.CodeHighlighterProcessor,
 };
 
 pub const PreProcessors = struct {
@@ -499,9 +500,7 @@ pub fn runProcessors(
         );
 
         _ = if (last_capture == null)
-            try result.writer().write(
-                output_file_contents[0..output_file_contents.len],
-            )
+            try result.writer().write(output_file_contents)
         else
             try result.writer().write(
                 output_file_contents[last_capture.?.end..output_file_contents.len],
@@ -770,10 +769,16 @@ fn writeHead(writer: anytype, build_file: BuildFile, title: []const u8) !void {
         \\    <title>{s}</title>
         \\    <script src="{s}/main.js"></script>
         \\    <link rel="stylesheet" href="{s}/styles.css">
+        \\    <link rel="stylesheet" href="{s}/pygments.css">
         \\  </head>
         \\  <body>
         \\  <nav class="toc">
-    , .{ util.unsafeHTML(title), build_file.config.webroot, build_file.config.webroot });
+    , .{
+        util.unsafeHTML(title),
+        build_file.config.webroot,
+        build_file.config.webroot,
+        build_file.config.webroot,
+    });
 }
 
 // TODO make this usable on the main pipeline too?
@@ -798,6 +803,7 @@ fn createStaticResources(ctx: Context) !void {
     const RESOURCES = .{
         .{ "resources/styles.css", "styles.css" },
         .{ "resources/main.js", "main.js" },
+        .{ "resources/pygments.css", "pygments.css" },
     };
 
     inline for (RESOURCES) |resource| {

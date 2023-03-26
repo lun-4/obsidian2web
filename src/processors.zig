@@ -163,7 +163,8 @@ test "cross page link processor" {
 pub const TagProcessor = struct {
     regex: libpcre.Regex,
 
-    // why doesnt this work on tags in the beginning of the line
+    // TODO why doesnt this work on tags in the beginning of the line
+    // TODO we shouldnt apply this to <code> blocks
     const REGEX: [:0]const u8 = "#[\\S\\-_]+";
     const Self = @This();
 
@@ -320,4 +321,110 @@ test "table of contents processor" {
             page.titles.?.items[0],
         );
     }
+}
+
+/// Wrap checkmarks in <code> HTML blocks.
+pub const CodeHighlighterProcessor = struct {
+    regex: libpcre.Regex,
+
+    const REGEX = "<code class=\"language-(\\w+)\">([\\S\\n--]+)<\\/code>";
+    const Self = @This();
+
+    pub fn init() !Self {
+        return Self{
+            .regex = try libpcre.Regex.compile(REGEX, DefaultRegexOptions),
+        };
+    }
+
+    pub fn deinit(self: Self) void {
+        self.regex.deinit();
+    }
+
+    pub fn handle(
+        self: Self,
+        /// Processor context. `pctx.ctx` gives Context
+        pctx: anytype,
+        file_contents: []const u8,
+        captures: []?libpcre.Capture,
+    ) !void {
+        _ = self;
+        const language_match = captures[1].?;
+        const code_text_match = captures[2].?;
+        const language = file_contents[language_match.start..language_match.end];
+        const code_text = file_contents[code_text_match.start..code_text_match.end];
+        logger.debug("found lang={s} {s}", .{ language, code_text });
+
+        var ctx = pctx.ctx;
+        if (!ctx.build_file.config.code_highlight) {
+            const original_text_match = captures[0].?;
+            try pctx.out.writeAll(
+                file_contents[original_text_match.start..original_text_match.end],
+            );
+        }
+
+        // spit code_text to separatte file, feed to pygments
+
+        var file = try std.fs.cwd().createFile("/tmp/o2w_sex2", .{});
+        defer file.close();
+
+        try file.writeAll(code_text);
+
+        var argv = root.SliceList.init(ctx.allocator);
+        defer argv.deinit();
+
+        try argv.appendSlice(&[_][]const u8{
+            "pygmentize",
+            "-f",
+            "html",
+            "-l",
+            language,
+            "-O",
+            "cssclass=pygments",
+            "/tmp/o2w_sex2",
+        });
+
+        const result = try std.ChildProcess.exec(.{
+            .allocator = ctx.allocator,
+            .argv = argv.items,
+            .max_output_bytes = 100 * 1024,
+            .expand_arg0 = .expand,
+        });
+
+        defer ctx.allocator.free(result.stdout);
+        defer ctx.allocator.free(result.stderr);
+
+        logger.debug("stdout {d}, stderr {d}", .{ result.stdout.len, result.stderr.len });
+
+        switch (result.term) {
+            .Exited => |code| if (code != 0) {
+                logger.err("pygmentize returned {} => {s}", .{ code, result.stderr });
+                return error.PygmentsFailed;
+            },
+            else => |code| {
+                logger.err("pygmentize returned {} => {s}", .{ code, result.stderr });
+                return error.PygmentsFailed;
+            },
+        }
+
+        // TODO why tf this emits &quot; and i see &quot; in the browser
+        // lmao
+
+        try util.fastWriteReplace(pctx.out, result.stdout, "&amp;", "&");
+    }
+};
+
+test "code highlighter" {
+    std.testing.log_level = .debug;
+    const TEST_DATA = .{
+        .{
+            \\ ```diff
+            \\ - b
+            \\ + a
+            \\ ```
+            ,
+            "",
+        },
+    };
+
+    try testing.runTestWithDataset(TEST_DATA);
 }

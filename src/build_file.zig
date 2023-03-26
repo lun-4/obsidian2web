@@ -8,6 +8,7 @@ pub const ConfigDirectives = struct {
     index: ?[]const u8 = null,
     webroot: []const u8 = "",
     project_footer: bool = false,
+    code_highlight: bool = false,
     custom_css: ?[]const u8 = null,
 };
 
@@ -53,6 +54,8 @@ pub const BuildFile = struct {
                 config.strict_links = parseBool(value);
             } else if (std.mem.eql(u8, "project_footer", directive)) {
                 config.project_footer = parseBool(value);
+            } else if (std.mem.eql(u8, "code_highlight", directive)) {
+                config.code_highlight = parseBool(value);
             } else if (std.mem.eql(u8, "custom_css", directive)) {
                 config.custom_css = value;
             } else {
