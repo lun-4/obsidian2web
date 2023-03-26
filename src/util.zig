@@ -124,10 +124,11 @@ pub fn fastWriteReplace(
         );
 
         if (maybe_found_at) |found_at| {
-            if (last_capture == null)
-                try writer.writeAll(input[0..found_at])
-            else
+            if (last_capture == null) {
+                try writer.writeAll(input[0..found_at]);
+            } else {
                 try writer.writeAll(input[last_capture.?.end..found_at]);
+            }
 
             try writer.writeAll(replace_to);
             last_capture = .{ .start = found_at, .end = found_at + replace_from.len };

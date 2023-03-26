@@ -163,7 +163,6 @@ test "cross page link processor" {
 pub const TagProcessor = struct {
     regex: libpcre.Regex,
 
-    // TODO why doesnt this work on tags in the beginning of the line
     const REGEX: [:0]const u8 = "#[\\w\\-_]+";
     const Self = @This();
 
@@ -195,7 +194,7 @@ pub const TagProcessor = struct {
 
         const first_character = if (full_match.start == 0) ' ' else file_contents[full_match.start - 1];
         if (first_character != ' ' and first_character != '\n') {
-            logger.warn("ignoring '{s}' firstchar '{s}'", .{ raw_text, &[_]u8{first_character} });
+            logger.debug("ignoring '{s}' firstchar '{s}'", .{ raw_text, &[_]u8{first_character} });
             return try pctx.out.print("{s}", .{raw_text});
         }
 
