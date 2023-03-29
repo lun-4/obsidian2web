@@ -146,3 +146,8 @@ nav li:has(a[aria-current="page"]) {
   padding: 10px;
   padding-top: 1px;
 }
+
+.heading {
+  font-size: 1.1rem;
+  font-weight: bold;
+}
