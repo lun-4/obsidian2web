@@ -670,12 +670,10 @@ fn generateTagPages(ctx: Context) !void {
         if (page.tags) |tags| for (tags.items) |tag| {
             var maybe_pagelist = try tag_map.getOrPut(tag);
 
-            if (maybe_pagelist.found_existing) {
-                try maybe_pagelist.value_ptr.append(entry.value_ptr);
-            } else {
+            if (!maybe_pagelist.found_existing) {
                 maybe_pagelist.value_ptr.* = PageList.init(ctx.allocator);
-                try maybe_pagelist.value_ptr.append(entry.value_ptr);
             }
+            try maybe_pagelist.value_ptr.append(entry.value_ptr);
         };
     }
 
