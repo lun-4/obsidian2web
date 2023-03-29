@@ -15,7 +15,6 @@ i learned this the hard way. one day i'll fix it.)
 
 - get a recent master build off https://ziglang.org/download/
   - tested with `0.11.0-dev.1711+dc1f50e50`
-  - TODO: get a github release with a musl binary going
 - install libpcre in your system
 - get [zigmod](https://github.com/nektro/zigmod/releases)
 
@@ -24,6 +23,9 @@ git clone https://github.com/lun-4/obsidian2web.git
 cd obsidian2web
 zigmod fetch
 zig build
+
+# for production / release deployments
+zig build -Dtarget=x86_64-linux-musl -Dcpu=baseline -Doptimize=ReleaseSafe
 ```
 
 # usage
