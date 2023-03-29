@@ -652,8 +652,9 @@ fn generateIndexPage(ctx: Context) !void {
 
 const PageList = std.ArrayList(*const Page);
 
+const TagMap = std.StringHashMap(PageList);
 fn generateTagPages(ctx: Context) !void {
-    var tag_map = std.StringHashMap(PageList).init(ctx.allocator);
+    var tag_map = TagMap.init(ctx.allocator);
 
     defer {
         var tags_it = tag_map.iterator();
@@ -700,6 +701,13 @@ fn generateTagPages(ctx: Context) !void {
         var writer = output_file.writer();
 
         try writeHead(writer, ctx.build_file, tag_name);
+
+        try writer.print(
+            \\ <h3 style="text-align:center"><a href="{s}">Go to tag index</a></h3>
+        , .{
+            ctx.webPath("/_/tag_index.html", .{}),
+        });
+
         _ = try writer.write(
             \\  </nav>
             \\  <main class="text">
@@ -758,6 +766,72 @@ fn generateTagPages(ctx: Context) !void {
             \\</html>
         );
     }
+
+    try generateTagIndex(ctx, tag_map);
+}
+
+fn generateTagIndex(ctx: Context, tag_map: TagMap) !void {
+    logger.info("generating tag index", .{});
+    var output_file = try std.fs.cwd().createFile(
+        "public/_/tag_index.html",
+        .{ .read = false, .truncate = true },
+    );
+    defer output_file.close();
+
+    var writer = output_file.writer();
+
+    try writeHead(writer, ctx.build_file, "Tag Index");
+    _ = try writer.write(
+        \\  </nav>
+        \\  <main class="text">
+    );
+
+    var tags = try SliceList.initCapacity(ctx.allocator, tag_map.unmanaged.size);
+    defer tags.deinit();
+
+    var tags_it = tag_map.iterator();
+    while (tags_it.next()) |entry| {
+        var tag_name = entry.key_ptr.*;
+        try tags.append(tag_name);
+    }
+
+    std.sort.sort([]const u8, tags.items, tag_map, struct {
+        fn inner(context: TagMap, a: []const u8, b: []const u8) bool {
+            return context.get(a).?.items.len > context.get(b).?.items.len;
+        }
+    }.inner);
+
+    try writer.print("<div class=\"tag-page\">", .{});
+    for (tags.items) |tag_name| {
+        try writer.print("<div class=\"tag-box\">", .{});
+
+        const pages = tag_map.get(tag_name).?;
+        try writer.print(
+            \\ <a href="{s}">
+            \\ <h4>{s}</h4>
+            \\ </a>
+            \\ ({d} pages)
+        , .{
+            ctx.webPath("/_/tags/{s}.html", .{tag_name}),
+            util.unsafeHTML(tag_name),
+            pages.items.len,
+        });
+
+        try writer.print("</div>", .{});
+    }
+    try writer.print("</div>", .{});
+    _ = try writer.write(
+        \\  </main>
+    );
+
+    if (ctx.build_file.config.project_footer) {
+        _ = try writer.write(FOOTER);
+    }
+
+    _ = try writer.write(
+        \\  </body>
+        \\</html>
+    );
 }
 
 fn writeHead(writer: anytype, build_file: BuildFile, title: []const u8) !void {
