@@ -36,18 +36,23 @@ footer {
 }
 
 .toc {
-  flex: 1 0 20%;
+  flex: 1 1 auto;
   padding-right: 1rem;
+  max-width: 24rem;
 }
 
 .text {
-  flex: 1 1 70%;
+  flex: 1 1 auto;
   padding-right: 1.5rem;
+  margin: auto;
+  width: 100%;
+  max-width: 50rem;
 }
 
 /* <a> links still live in a dark background, so fix that */
 a {
   color: aqua;
+  overflow-wrap: break-word;
 }
 
 a:hover {
