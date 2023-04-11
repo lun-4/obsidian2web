@@ -5,7 +5,8 @@ description: An HTML renderer for Obsidian vaults
 root_dependencies:
   - name: libpcre
     main: src/main.zig
-    src: git https://github.com/kivikakk/libpcre.zig
+    # hack for latest zig
+    src: git https://github.com/lun-4/libpcre.zig branch-amongus
   - name: chrono
     main: src/lib.zig
     src: git https://github.com/lun-4/chrono-zig branch-luna-fix-master-zig
