@@ -51,7 +51,7 @@ test "checkmark processor" {
 }
 
 pub const CrossPageLinkProcessor = struct {
-    const REGEX = "\\[\\[.+\\]\\]";
+    const REGEX = "!?\\[\\[.+\\]\\]";
 
     regex: libpcre.Regex,
 
@@ -76,41 +76,74 @@ pub const CrossPageLinkProcessor = struct {
     ) !void {
         _ = self;
         const match = captures[0].?;
-        const referenced_title = file_contents[match.start + 2 .. match.end - 2];
-        logger.debug(
-            "{s} has link to '{s}'",
-            .{ pctx.page.title, referenced_title },
-        );
-
+        const full_link_text = file_contents[match.start..match.end];
         var ctx = pctx.ctx;
 
-        var maybe_page_local_path = ctx.titles.get(referenced_title);
-        if (maybe_page_local_path) |page_local_path| {
-            var referenced_page = ctx.pages.get(page_local_path).?;
-            var web_path = try referenced_page.fetchWebPath(pctx.ctx.allocator);
-            defer pctx.ctx.allocator.free(web_path);
+        if (full_link_text[0] == '!') {
 
-            logger.debug(
-                "{s} has link to web path '{s}'",
-                .{ pctx.page.title, web_path },
-            );
+            // inline link to vault file
+            const referenced_file_basename = file_contents[match.start + 3 .. match.end - 2];
+            const fspath = ctx.titles.get(referenced_file_basename) orelse {
+                logger.err(
+                    "referenced name: {s} not found",
+                    .{referenced_file_basename},
+                );
+                return error.InvalidLinksFound;
+            };
+            const maybe_page = ctx.pages.get(fspath);
+            if (maybe_page != null) {
+                logger.err(
+                    "referenced name: {s} is not an inline-able file, but a page.",
+                    .{referenced_file_basename},
+                );
+                return error.InvalidLinksFound;
+            }
+
+            logger.info("INLINE {s}", .{fspath});
 
             try pctx.out.print(
-                "<a href=\"{}\">{s}</a>",
+                "<img src=\"{s}\">",
                 .{
-                    ctx.webPath("/{s}", .{web_path}),
-                    util.unsafeHTML(referenced_title),
+                    ctx.webPath("/images/{s}", .{referenced_file_basename}),
                 },
             );
         } else {
-            if (ctx.build_file.config.strict_links) {
-                logger.err(
-                    "file '{s}' has link to file '{s}' which is not included!",
-                    .{ pctx.page, referenced_title },
+            // link to page
+
+            const referenced_title = file_contents[match.start + 2 .. match.end - 2];
+            logger.debug(
+                "{s} has link to '{s}'",
+                .{ pctx.page.title, referenced_title },
+            );
+
+            var maybe_page_local_path = ctx.titles.get(referenced_title);
+            if (maybe_page_local_path) |page_local_path| {
+                var referenced_page = ctx.pages.get(page_local_path).?;
+                var web_path = try referenced_page.fetchWebPath(pctx.ctx.allocator);
+                defer pctx.ctx.allocator.free(web_path);
+
+                logger.debug(
+                    "{s} has link to web path '{s}'",
+                    .{ pctx.page.title, web_path },
                 );
-                return error.InvalidLinksFound;
+
+                try pctx.out.print(
+                    "<a href=\"{}\">{s}</a>",
+                    .{
+                        ctx.webPath("/{s}", .{web_path}),
+                        util.unsafeHTML(referenced_title),
+                    },
+                );
             } else {
-                try pctx.out.print("[[{s}]]", .{referenced_title});
+                if (ctx.build_file.config.strict_links) {
+                    logger.err(
+                        "file '{s}' has link to file '{s}' which is not included!",
+                        .{ pctx.page, referenced_title },
+                    );
+                    return error.InvalidLinksFound;
+                } else {
+                    try pctx.out.print("[[{s}]]", .{referenced_title});
+                }
             }
         }
     }

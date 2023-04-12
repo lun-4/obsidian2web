@@ -210,9 +210,21 @@ pub const Context = struct {
     }
 
     pub fn addPage(self: *Self, path: []const u8) !void {
-        if (!std.mem.endsWith(u8, path, ".md")) return;
-
         const owned_fspath = try self.pathAllocator().dupe(u8, path);
+
+        // if not a page that should be rendered, add it to only titlemap
+
+        if (!std.mem.endsWith(u8, path, ".md")) {
+            const basename = std.fs.path.basename(owned_fspath);
+
+            var titles_result = try self.titles.getOrPut(basename);
+            if (!titles_result.found_existing) {
+                titles_result.value_ptr.* = owned_fspath;
+            }
+
+            return;
+        }
+
         var pages_result = try self.pages.getOrPut(owned_fspath);
         if (!pages_result.found_existing) {
             var page = try Page.fromPath(self, owned_fspath);
@@ -353,6 +365,21 @@ pub fn main() anyerror!void {
             try mainPass(&ctx, entry.value_ptr);
             try runProcessors(&ctx, &post_processors, entry.value_ptr, .{});
         }
+    }
+
+    try std.fs.cwd().makePath("public/images");
+    var titles_it = ctx.titles.iterator();
+    while (titles_it.next()) |entry| {
+        const fspath = entry.value_ptr.*;
+        const maybe_page = ctx.pages.get(fspath);
+        if (maybe_page != null) continue;
+        var output_path_buffer: [std.os.PATH_MAX]u8 = undefined;
+        const output_path = try std.fmt.bufPrint(
+            &output_path_buffer,
+            "public/images/{s}",
+            .{std.fs.path.basename(fspath)},
+        );
+        try std.fs.cwd().copyFile(fspath, std.fs.cwd(), output_path, .{});
     }
 
     // generate index page
