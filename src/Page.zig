@@ -194,8 +194,12 @@ pub fn format(
 }
 
 pub fn relativePath(self: Self) []const u8 {
-    const relative_fspath = util.stripLeft(self.filesystem_path, self.ctx.build_file.vault_path)[1..];
-    std.debug.assert(relative_fspath[0] != '/'); // must be relative
+    const stripped = util.stripLeft(self.filesystem_path, self.ctx.build_file.vault_path);
+    // if you triggered this assertion, its likely vault path ended with a slash,
+    // removing it should work.
+    std.debug.assert(stripped[0] == '/'); // TODO better path handling code
+    const relative_fspath = stripped[1..];
+    std.debug.assert(relative_fspath[0] != '/'); // must be relative afterwards
     return relative_fspath;
 }
 
