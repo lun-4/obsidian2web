@@ -30,12 +30,17 @@ zig build -Dtarget=x86_64-linux-musl -Dcpu=baseline -Doptimize=ReleaseSafe
 
 # usage
 
-you create an .o2w file with the following text
+you create an .o2w file with the following text format:
 
 ```
 vault /home/whatever/path/to/your/obsidian/vault
+
+# include directory1, from the perspective of the vault path
+# as in, /home/whatever/path/to/your/obsidian/vault/directory1 MUST exist
 include ./directory1
 include ./directory2
+
+# it also works with singular files
 include ./Some article.md
 
 # if you wish to include the entire vault, do this
@@ -46,6 +51,7 @@ other directives you might add
 
 - `index ./path/to/some/article.md` to set the index page on your build
   - if not provided, a blank page is used
+  - also operates relative to the vault path
 - `webroot /path/to/web/thing` to set the deployment location on the web
   - useful if you're deploying to a subfolder of your main domain
 - `strict_links yes` or `strict_links no` (default is `yes`)
