@@ -37,6 +37,9 @@ vault /home/whatever/path/to/your/obsidian/vault
 include ./directory1
 include ./directory2
 include ./Some article.md
+
+# if you wish to include the entire vault, do this
+include .
 ```
 
 other directives you might add
