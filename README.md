@@ -6,7 +6,9 @@ this idea came to be from using a notion page for a knowledge index and
 seeing absurdly poor performance come out of it. thought i'd make my own to
 get my fingers dirty in zig once again.
 
-you see it in action here: https://l4.pm/vr/lifehax/
+you see it in action here:
+- https://l4.pm/wiki
+- https://l4.pm/vr/lifehax
 
 (note, do not name any folder inside your vault `public/`, it will break links,
 i learned this the hard way. one day i'll fix it.)
