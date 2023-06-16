@@ -2,6 +2,8 @@ const std = @import("std");
 const libpcre = @import("libpcre");
 const main = @import("main.zig");
 
+const logger = std.log.scoped(.obsidian2web_util);
+
 pub fn unsafeHTML(data: []const u8) UnsafeHTMLPrinter {
     return UnsafeHTMLPrinter{ .data = data };
 }
@@ -52,17 +54,19 @@ pub fn captureWithCallback(
         capture: []?libpcre.Capture,
     ) anyerror!void,
 ) anyerror!void {
+    logger.debug("running regex {}", .{regex});
     var offset: usize = 0;
 
-    var match_list = MatchList.init(allocator);
-    errdefer match_list.deinit();
     while (true) {
+        logger.debug("regex at offset {d}", .{offset});
+        logger.debug("data to match={s}", .{full_string[offset..]});
         var maybe_single_capture = try regex.captures(
             allocator,
             full_string[offset..],
             options,
         );
         if (maybe_single_capture) |single_capture| {
+            logger.debug("captured regex at offset {d}", .{offset});
             defer allocator.free(single_capture);
 
             const first_group = single_capture[0].?;
@@ -77,6 +81,7 @@ pub fn captureWithCallback(
             try callback(ctx, full_string, single_capture);
             offset += first_group.end;
         } else {
+            logger.debug("nothing after offset={d}", .{offset});
             break;
         }
     }

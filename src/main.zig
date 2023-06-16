@@ -394,7 +394,9 @@ pub const PostProcessors = struct {
 };
 
 pub const PreProcessors = struct {
-    escape_hashtags_in_code: processors.EscapeHashtagsInCode,
+    // TODO this is a hack that broke page_toc, so it's commented out
+    // see https://github.com/lun-4/obsidian2web/issues/27
+    // escape_hashtags_in_code: processors.EscapeHashtagsInCode,
     tag: processors.TagProcessor,
     page_toc: processors.TableOfContentsProcessor,
     set_first_image: processors.SetFirstImageProcessor,
