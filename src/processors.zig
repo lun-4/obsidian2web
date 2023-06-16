@@ -503,3 +503,36 @@ test "code highlighter" {
 
     try testing.runTestWithDataset(TEST_DATA);
 }
+
+/// Wrap checkmarks in <code> HTML blocks.
+pub const SetFirstImageProcessor = struct {
+    regex: libpcre.Regex,
+
+    const REGEX = "!\\[.+\\]\\((.+)\\)";
+    const Self = @This();
+
+    pub fn init() !Self {
+        return Self{
+            .regex = try libpcre.Regex.compile(REGEX, DefaultRegexOptions),
+        };
+    }
+
+    pub fn deinit(self: Self) void {
+        self.regex.deinit();
+    }
+
+    pub fn handle(
+        self: Self,
+        /// Processor context. `pctx.ctx` gives Context
+        pctx: anytype,
+        file_contents: []const u8,
+        captures: []?libpcre.Capture,
+    ) !void {
+        _ = self;
+        const match = captures[1].?;
+        const url = file_contents[match.start..match.end];
+        if (pctx.page.maybe_first_image == null) {
+            pctx.page.maybe_first_image = try pctx.ctx.allocator.dupe(u8, url);
+        }
+    }
+};
