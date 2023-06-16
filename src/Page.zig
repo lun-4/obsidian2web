@@ -15,6 +15,8 @@ tags: ?OwnedStringList = null,
 titles: ?OwnedStringList = null,
 state: State = .{ .unbuilt = {} },
 
+maybe_first_image: ?[]const u8 = null,
+
 const Self = @This();
 
 pub const State = union(enum) {
@@ -180,6 +182,7 @@ pub fn deinit(self: Self) void {
         for (titles.items) |title| self.ctx.allocator.free(title);
         titles.deinit();
     }
+    if (self.maybe_first_image) |image| self.ctx.allocator.free(image);
 }
 
 pub fn format(

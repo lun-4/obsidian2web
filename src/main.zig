@@ -397,6 +397,7 @@ pub const PreProcessors = struct {
     escape_hashtags_in_code: processors.EscapeHashtagsInCode,
     tag: processors.TagProcessor,
     page_toc: processors.TableOfContentsProcessor,
+    set_first_image: processors.SetFirstImageProcessor,
 };
 
 pub fn initProcessors(comptime ProcessorHolderT: type) !ProcessorHolderT {
@@ -603,7 +604,7 @@ pub fn mainPass(ctx: *Context, page: *Page) !void {
 
     // write time
     {
-        try writeHead(output, ctx.build_file, page.title);
+        try writeHead(output, ctx.build_file, page.title, page.*);
 
         try writePageTree(output, ctx, .{}, page);
         try output.print(
@@ -682,7 +683,7 @@ fn generateIndexPage(ctx: Context) !void {
 
         const writer = index_out_fd.writer();
 
-        try writeHead(writer, ctx.build_file, "Index Page");
+        try writeHead(writer, ctx.build_file, "Index Page", null);
         try writePageTree(writer, &ctx, .{}, null);
         try writeEmptyPage(writer, ctx.build_file);
     }
@@ -736,7 +737,7 @@ fn generateTagPages(ctx: Context) !void {
 
         var writer = output_file.writer();
 
-        try writeHead(writer, ctx.build_file, tag_name);
+        try writeHead(writer, ctx.build_file, tag_name, null);
 
         try writer.print(
             \\ <h3 style="text-align:center"><a href="{s}">Go to tag index</a></h3>
@@ -816,7 +817,7 @@ fn generateTagIndex(ctx: Context, tag_map: TagMap) !void {
 
     var writer = output_file.writer();
 
-    try writeHead(writer, ctx.build_file, "Tag Index");
+    try writeHead(writer, ctx.build_file, "Tag Index", null);
     _ = try writer.write(
         \\  </nav>
         \\  <main class="text">
@@ -870,7 +871,7 @@ fn generateTagIndex(ctx: Context, tag_map: TagMap) !void {
     );
 }
 
-fn writeHead(writer: anytype, build_file: BuildFile, title: []const u8) !void {
+fn writeHead(writer: anytype, build_file: BuildFile, title: []const u8, maybe_page: ?Page) !void {
     try writer.print(
         \\<!DOCTYPE html>
         \\<html lang="en">
@@ -878,6 +879,22 @@ fn writeHead(writer: anytype, build_file: BuildFile, title: []const u8) !void {
         \\    <meta charset="UTF-8">
         \\    <meta name="viewport" content="width=device-width, initial-scale=1.0">
         \\    <title>{s}</title>
+        \\    <meta property="og:title" content="{s}" />
+        \\    <meta property="og:type" content="article" />
+    , .{
+        util.unsafeHTML(title),
+        util.unsafeHTML(title),
+    });
+
+    if (maybe_page) |page| {
+        if (page.maybe_first_image) |image_url| {
+            try writer.print(
+                \\ <meta property="og:image" content="{s}" />
+            , .{image_url});
+        }
+    }
+
+    try writer.print(
         \\    <script src="{s}/main.js"></script>
         \\    <link rel="stylesheet" href="{s}/styles.css">
         \\    <link rel="stylesheet" href="{s}/pygments.css">
@@ -885,7 +902,6 @@ fn writeHead(writer: anytype, build_file: BuildFile, title: []const u8) !void {
         \\  <body>
         \\  <nav class="toc">
     , .{
-        util.unsafeHTML(title),
         build_file.config.webroot,
         build_file.config.webroot,
         build_file.config.webroot,
