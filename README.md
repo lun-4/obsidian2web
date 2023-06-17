@@ -62,6 +62,14 @@ other directives you might add
   - add a small reference to obsidian2web on all the page's footers.
 - `custom_css path/to/css/file`
   - use a differentt file for `styles.css` instead of the builtin one
+- `static_twitter_folder /path/to/folder/in/your/system`
+  - when given, enables the `!twitter[...]` extension to your articles
+  - requires [snscrape](https://github.com/JustAnotherArchivist/snscrape) installed in your machine
+  - automatically downloads tweets referenced by that pattern into the folder, in jsonl format
+  - it will download THE ENTIRE THREAD CHAIN, RECURSIVELY, BY DEFAULT. because archival is the primary purpose
+    - it may take a while to download certain tweets, is what i mean.
+    - you can ctrl-c the process and re-run, and it'll use the first tweet it has in the file.
+    - remove the jsonl file in the folder if you wish to regenerate it
 
 build your vault like this
 
