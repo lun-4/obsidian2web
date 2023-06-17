@@ -610,7 +610,6 @@ pub const StaticTwitterEmbed = struct {
                 try proc.spawn();
 
                 var new_file = try dir.createFile(pathname, .{});
-                defer new_file.close();
                 var buf: [512]u8 = undefined;
                 while (true) {
                     const read_bytes = try proc.stdout.?.reader().read(&buf);
@@ -627,6 +626,10 @@ pub const StaticTwitterEmbed = struct {
                     },
                     else => return error.InvalidTermCode,
                 }
+
+                try std.os.fsync(new_file.handle);
+                new_file.close();
+
                 break :blk try dir.openFile(pathname, .{ .mode = .read_only });
             },
             else => return err,
@@ -635,6 +638,8 @@ pub const StaticTwitterEmbed = struct {
 
         const snscrape_jsonl = try file.reader().readUntilDelimiterAlloc(ctx.allocator, '\n', std.math.maxInt(usize));
         defer ctx.allocator.free(snscrape_jsonl);
+
+        logger.debug("parsing '{s}'", .{snscrape_jsonl});
 
         var tokens = std.json.TokenStream.init(snscrape_jsonl);
         const json_opts = .{
@@ -650,13 +655,35 @@ pub const StaticTwitterEmbed = struct {
         try pctx.out.print(
             \\<blockquote>
             \\    <p>{s}</p>
-            \\    <p> - <a href="{s}">{s} ({s})</a></p>
-            \\</blockquote>
         , .{
             jsonl_data.renderedContent,
+        });
+
+        if (jsonl_data.media) |all_media| for (all_media) |media| {
+            if (std.mem.eql(u8, media._type, "snscrape.modules.twitter.Photo")) {
+                var alt_text_buffer: [2048]u8 = undefined;
+                const alt_text_html = if (media.altText) |alt_text|
+                    try std.fmt.bufPrint(&alt_text_buffer, "alt=\"{s}\"", .{alt_text})
+                else
+                    "";
+
+                try pctx.out.print(
+                    \\ <img src="{s}" {s}></img>
+                , .{
+                    media.previewUrl orelse continue,
+                    alt_text_html,
+                });
+            }
+        };
+
+        try pctx.out.print(
+            \\    <p> - <a href="{s}">{s} ({s})</a>, {s}</p>
+            \\</blockquote>
+        , .{
             twitter_url,
             jsonl_data.user.displayname,
             jsonl_data.user.username,
+            jsonl_data.date, // TODO prettyprint date
         });
     }
 };
@@ -664,10 +691,19 @@ pub const StaticTwitterEmbed = struct {
 const SnScrape = struct {
     _type: []const u8,
     renderedContent: []const u8,
-    user: SnScrapeUser,
-};
+    date: []const u8,
+    user: User,
+    media: ?[]Media = null,
 
-const SnScrapeUser = struct {
-    username: []const u8,
-    displayname: []const u8,
+    pub const User = struct {
+        username: []const u8,
+        displayname: []const u8,
+    };
+
+    pub const Media = struct {
+        _type: []const u8,
+        previewUrl: ?[]const u8 = null,
+        fullUrl: ?[]const u8 = null,
+        altText: ?[]const u8 = null,
+    };
 };
