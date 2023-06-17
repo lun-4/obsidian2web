@@ -618,7 +618,7 @@ pub const StaticTwitterEmbed = struct {
                     const data = buf[0..read_bytes];
                     try new_file.writeAll(data);
                 }
-                const term = try proc.spawnAndWait();
+                const term = try proc.wait();
                 logger.info("term: {}", .{term});
                 switch (term) {
                     .Exited => |code| switch (code) {
