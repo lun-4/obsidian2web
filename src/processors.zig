@@ -563,9 +563,12 @@ pub const StaticTwitterEmbed = struct {
     ) !void {
         _ = self;
 
+        const full_match = captures[0].?;
         const ctx = pctx.ctx;
 
         if (ctx.build_file.config.static_twitter_folder == null) {
+            logger.warn("twitter embed requested but no static_twitter_folder provided", .{});
+            _ = try pctx.out.write(file_contents[full_match.start..full_match.end]);
             return;
         }
 
