@@ -529,10 +529,12 @@ pub const SetFirstImageProcessor = struct {
         captures: []?libpcre.Capture,
     ) !void {
         _ = self;
+        const full_match = captures[0].?;
         const match = captures[1].?;
         const url = file_contents[match.start..match.end];
         if (pctx.page.maybe_first_image == null) {
             pctx.page.maybe_first_image = try pctx.ctx.allocator.dupe(u8, url);
         }
+        _ = try pctx.out.write(file_contents[full_match.start..full_match.end]);
     }
 };
