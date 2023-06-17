@@ -400,6 +400,7 @@ pub const PreProcessors = struct {
     tag: processors.TagProcessor,
     page_toc: processors.TableOfContentsProcessor,
     set_first_image: processors.SetFirstImageProcessor,
+    twitter: processors.StaticTwitterEmbed,
 };
 
 pub fn initProcessors(comptime ProcessorHolderT: type) !ProcessorHolderT {

@@ -504,7 +504,6 @@ test "code highlighter" {
     try testing.runTestWithDataset(TEST_DATA);
 }
 
-/// Wrap checkmarks in <code> HTML blocks.
 pub const SetFirstImageProcessor = struct {
     regex: libpcre.Regex,
 
@@ -537,4 +536,135 @@ pub const SetFirstImageProcessor = struct {
         }
         _ = try pctx.out.write(file_contents[full_match.start..full_match.end]);
     }
+};
+
+pub const StaticTwitterEmbed = struct {
+    regex: libpcre.Regex,
+
+    const REGEX = "!twitter\\[(.+)\\]";
+    const Self = @This();
+
+    pub fn init() !Self {
+        return Self{
+            .regex = try libpcre.Regex.compile(REGEX, DefaultRegexOptions),
+        };
+    }
+
+    pub fn deinit(self: Self) void {
+        self.regex.deinit();
+    }
+
+    pub fn handle(
+        self: Self,
+        /// Processor context. `pctx.ctx` gives Context
+        pctx: anytype,
+        file_contents: []const u8,
+        captures: []?libpcre.Capture,
+    ) !void {
+        _ = self;
+
+        const ctx = pctx.ctx;
+
+        if (ctx.build_file.config.static_twitter_folder == null) {
+            return;
+        }
+
+        const static_twitter_folder = ctx.build_file.config.static_twitter_folder.?;
+        const twitter_url_match = captures[1].?;
+        const twitter_url = file_contents[twitter_url_match.start..twitter_url_match.end];
+
+        var it = std.mem.split(u8, twitter_url, "/");
+        _ = it.next();
+        _ = it.next();
+        _ = it.next();
+        _ = it.next();
+        _ = it.next();
+        const twitter_id = it.next() orelse return error.InvalidTwitterURL;
+
+        var dir = try std.fs.cwd().openDir(static_twitter_folder, .{});
+        defer dir.close();
+
+        var pathbuffer: [std.os.PATH_MAX]u8 = undefined;
+        const pathname = try std.fmt.bufPrint(&pathbuffer, "{s}.jsonl", .{twitter_id});
+        logger.info("path: {s}", .{pathname});
+
+        var file = dir.openFile(pathname, .{ .mode = .read_only }) catch |err| switch (err) {
+            error.FileNotFound => blk: {
+                var proc = std.ChildProcess.init(
+                    &[_][]const u8{
+                        "snscrape",
+                        "-vv",
+                        "--progress",
+                        "--jsonl",
+                        "twitter-tweet",
+                        "--recurse",
+                        twitter_id,
+                    },
+                    ctx.allocator,
+                );
+                proc.stdout_behavior = .Pipe;
+                //defer proc.kill();
+                try proc.spawn();
+
+                var new_file = try dir.createFile(pathname, .{});
+                defer new_file.close();
+                var buf: [512]u8 = undefined;
+                while (true) {
+                    const read_bytes = try proc.stdout.?.reader().read(&buf);
+                    if (read_bytes == 0) break;
+                    const data = buf[0..read_bytes];
+                    try new_file.writeAll(data);
+                }
+                const term = try proc.spawnAndWait();
+                logger.info("term: {}", .{term});
+                switch (term) {
+                    .Exited => |code| switch (code) {
+                        0 => {},
+                        else => return error.InvalidExitCode,
+                    },
+                    else => return error.InvalidTermCode,
+                }
+                break :blk try dir.openFile(pathname, .{ .mode = .read_only });
+            },
+            else => return err,
+        };
+        defer file.close();
+
+        const snscrape_jsonl = try file.reader().readUntilDelimiterAlloc(ctx.allocator, '\n', std.math.maxInt(usize));
+        defer ctx.allocator.free(snscrape_jsonl);
+
+        var tokens = std.json.TokenStream.init(snscrape_jsonl);
+        const json_opts = .{
+            .allocator = ctx.allocator,
+            .ignore_unknown_fields = true,
+        };
+
+        var jsonl_data = try std.json.parse(SnScrape, &tokens, json_opts);
+        defer std.json.parseFree(SnScrape, jsonl_data, json_opts);
+
+        std.debug.assert(std.mem.eql(u8, jsonl_data._type, "snscrape.modules.twitter.Tweet"));
+
+        try pctx.out.print(
+            \\<blockquote>
+            \\    <p>{s}</p>
+            \\    <p> - <a href="{s}">{s} ({s})</a></p>
+            \\</blockquote>
+        , .{
+            jsonl_data.renderedContent,
+            twitter_url,
+            jsonl_data.user.displayname,
+            jsonl_data.user.username,
+        });
+    }
+};
+
+const SnScrape = struct {
+    _type: []const u8,
+    renderedContent: []const u8,
+    user: SnScrapeUser,
+};
+
+const SnScrapeUser = struct {
+    username: []const u8,
+    displayname: []const u8,
 };

@@ -10,6 +10,7 @@ pub const ConfigDirectives = struct {
     project_footer: bool = false,
     code_highlight: bool = false,
     custom_css: ?[]const u8 = null,
+    static_twitter_folder: ?[]const u8 = null,
 };
 
 fn parseBool(string: []const u8) bool {
@@ -58,6 +59,8 @@ pub const BuildFile = struct {
                 config.code_highlight = parseBool(value);
             } else if (std.mem.eql(u8, "custom_css", directive)) {
                 config.custom_css = value;
+            } else if (std.mem.eql(u8, "static_twitter_folder", directive)) {
+                config.static_twitter_folder = value;
             } else {
                 std.log.err("unknown directive '{s}'", .{directive});
                 return error.UnknownDirective;
