@@ -390,7 +390,6 @@ pub fn main() anyerror!void {
 pub const PostProcessors = struct {
     checkmark: processors.CheckmarkProcessor,
     cross_page_link: processors.CrossPageLinkProcessor,
-    //    code: processors.CodeHighlighterProcessor,
 };
 
 pub const PreProcessors = struct {
