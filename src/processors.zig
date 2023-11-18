@@ -641,14 +641,11 @@ pub const StaticTwitterEmbed = struct {
 
         logger.debug("parsing '{s}'", .{snscrape_jsonl});
 
-        var tokens = std.json.TokenStream.init(snscrape_jsonl);
-        const json_opts = .{
-            .allocator = ctx.allocator,
+        var jsonl_parsed = try std.json.parseFromSlice(SnScrape, ctx.allocator, snscrape_jsonl, .{
             .ignore_unknown_fields = true,
-        };
-
-        var jsonl_data = try std.json.parse(SnScrape, &tokens, json_opts);
-        defer std.json.parseFree(SnScrape, jsonl_data, json_opts);
+        });
+        defer jsonl_parsed.deinit();
+        const jsonl_data = jsonl_parsed.value;
 
         std.debug.assert(std.mem.eql(u8, jsonl_data._type, "snscrape.modules.twitter.Tweet"));
 

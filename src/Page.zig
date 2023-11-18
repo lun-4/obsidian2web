@@ -52,7 +52,7 @@ pub const PageAttributes = struct {
     pub fn fromFile(file: std.fs.File) !@This() {
         var stat = try file.stat();
         var self = @This(){
-            .ctime = @intCast(i64, @divTrunc(stat.ctime, std.time.ns_per_s)),
+            .ctime = @as(i64, @intCast(@divTrunc(stat.ctime, std.time.ns_per_s))),
         };
         var first_bytes_buffer: [256]u8 = undefined;
 
@@ -104,10 +104,10 @@ pub const PageAttributes = struct {
         try std.testing.expect(delta < 10);
 
         const date_from_attrs = (std.time.epoch.EpochSeconds{
-            .secs = @intCast(u64, attrs.ctime),
+            .secs = @as(u64, @intCast(attrs.ctime)),
         }).getEpochDay().calculateYearDay();
         const date_from_curtime = (std.time.epoch.EpochSeconds{
-            .secs = @intCast(u64, current_time),
+            .secs = @as(u64, @intCast(current_time)),
         }).getEpochDay().calculateYearDay();
 
         try std.testing.expectEqual(date_from_curtime.day, date_from_attrs.day);
@@ -116,7 +116,7 @@ pub const PageAttributes = struct {
         const month_from_curtime = date_from_curtime.calculateMonthDay();
 
         const naive_dt = try chrono.NaiveDateTime.from_timestamp(attrs.ctime, 0);
-        try std.testing.expectEqual(date_from_curtime.year, @intCast(u16, naive_dt.date.year()));
+        try std.testing.expectEqual(date_from_curtime.year, @as(u16, @intCast(naive_dt.date.year())));
         try std.testing.expectEqual(month_from_curtime.month.numeric(), naive_dt.date.month().number());
         try std.testing.expectEqual(month_from_curtime.day_index + 1, naive_dt.date.day());
     }
@@ -144,7 +144,7 @@ pub const PageAttributes = struct {
         try std.testing.expectEqual(@as(i19, 4), naive_dt.date.day());
 
         const date_from_attrs = (std.time.epoch.EpochSeconds{
-            .secs = @intCast(u64, attrs.ctime),
+            .secs = @as(u64, @intCast(attrs.ctime)),
         }).getEpochDay().calculateYearDay();
 
         const month_from_attrs = date_from_attrs.calculateMonthDay();

@@ -90,7 +90,6 @@ pub fn captureWithCallback(
 pub fn WebPathPrinter(comptime ArgsT: anytype, comptime fmt: []const u8) type {
     return struct {
         ctx: main.Context,
-        comptime innerFmt: []const u8 = fmt,
         args: ArgsT,
 
         const Self = @This();
@@ -106,7 +105,7 @@ pub fn WebPathPrinter(comptime ArgsT: anytype, comptime fmt: []const u8) type {
             try std.fmt.format(writer, "{s}", .{
                 self.ctx.build_file.config.webroot,
             });
-            try std.fmt.format(writer, self.innerFmt, self.args);
+            try std.fmt.format(writer, fmt, self.args);
         }
     };
 }

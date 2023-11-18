@@ -72,8 +72,8 @@ fn writePageTree(
             }
         }
 
-        std.sort.sort([]const u8, folders.items, {}, util.lexicographicalCompare);
-        std.sort.sort([]const u8, files.items, {}, util.lexicographicalCompare);
+        std.sort.insertion([]const u8, folders.items, {}, util.lexicographicalCompare);
+        std.sort.insertion([]const u8, files.items, {}, util.lexicographicalCompare);
     }
 
     // draw folders first (they recurse)
@@ -289,7 +289,7 @@ pub fn iterateVaultPath(ctx: *Context) !void {
 
         while (try walker.next()) |entry| {
             switch (entry.kind) {
-                .File => {
+                .file => {
                     const absolute_file_path = try std.fs.path.join(
                         ctx.allocator,
                         &[_][]const u8{ absolute_include_path, entry.path },
@@ -510,7 +510,7 @@ pub fn runProcessors(
                     holder: *HolderT,
                     full_string: []const u8,
                     capture: []?libpcre.Capture,
-                ) !void {
+                ) anyerror!void {
                     const first_group = capture[0].?;
                     _ = if (holder.last_capture.* == null)
                         try holder.out.write(
@@ -753,7 +753,7 @@ fn generateTagPages(ctx: Context) !void {
             \\  <main class="text">
         );
 
-        std.sort.sort(*const Page, entry.value_ptr.items, {}, struct {
+        std.sort.insertion(*const Page, entry.value_ptr.items, {}, struct {
             fn inner(context: void, a: *const Page, b: *const Page) bool {
                 _ = context;
                 return a.attributes.ctime < b.attributes.ctime;
@@ -835,7 +835,7 @@ fn generateTagIndex(ctx: Context, tag_map: TagMap) !void {
         try tags.append(tag_name);
     }
 
-    std.sort.sort([]const u8, tags.items, tag_map, struct {
+    std.sort.insertion([]const u8, tags.items, tag_map, struct {
         fn inner(context: TagMap, a: []const u8, b: []const u8) bool {
             return context.get(a).?.items.len > context.get(b).?.items.len;
         }
