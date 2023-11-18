@@ -16,4 +16,4 @@ root_dependencies:
     dependencies:
       - src: git https://github.com/kivikakk/libpcre.zig
       - src: git https://github.com/kivikakk/htmlentities.zig
-      - src: git https://github.com/kivikakk/zunicode
+      - src: git https://github.com/lun-4/zunicode
