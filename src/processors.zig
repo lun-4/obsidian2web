@@ -389,16 +389,15 @@ test "table of contents processor" {
     }
 }
 
-/// Wrap checkmarks in <code> HTML blocks.
-pub const CodeHighlighterProcessor = struct {
+pub const CodeblockProcessor = struct {
     regex: libpcre.Regex,
 
-    const REGEX = "<code class=\"language-(\\w+)\">([\\S\\n--]+)<\\/code>";
+    const REGEX = "```(\\w*)\n([\\S\\n--]+)\n```";
     const Self = @This();
 
     pub fn init() !Self {
         return Self{
-            .regex = try libpcre.Regex.compile(REGEX, DefaultRegexOptions),
+            .regex = try libpcre.Regex.compile(REGEX, .{ .Ucp = true, .Utf8 = true, .Ungreedy = true }),
         };
     }
 
@@ -421,15 +420,16 @@ pub const CodeHighlighterProcessor = struct {
         logger.debug("found lang={s} {s}", .{ language, code_text });
 
         var ctx = pctx.ctx;
-        if (!ctx.build_file.config.code_highlight) {
+        if (!ctx.build_file.config.code_highlight or language.len == 0) {
+            logger.debug("code_hightlight is unset or lang isnt set, ignoring", .{});
+
             const original_text_match = captures[0].?;
-            try pctx.out.writeAll(
+            return try pctx.out.writeAll(
                 file_contents[original_text_match.start..original_text_match.end],
             );
         }
 
-        // spit code_text to separatte file, feed to pygments
-
+        // spit code_text to separate file, feed to pygments
         var file = try std.fs.cwd().createFile("/tmp/o2w_sex2", .{});
         defer file.close();
 
@@ -475,20 +475,11 @@ pub const CodeHighlighterProcessor = struct {
             },
         }
 
-        var tmpfile = try std.fs.cwd().createFile("/tmp/test", .{ .read = true });
-        defer tmpfile.close();
-
-        // TODO why tf pygments emits &amp;quot; insteadd of &quot; lmfao
-        // i have to run it twice because of brokeen architecture mess
-        try util.fastWriteReplace(tmpfile.writer(), result.stdout, "&amp;", "&");
-        try tmpfile.seekTo(0);
-        const tmpfile_after_replace = try tmpfile.reader().readAllAlloc(pctx.ctx.allocator, std.math.maxInt(usize));
-        defer pctx.ctx.allocator.free(tmpfile_after_replace);
-        try util.fastWriteReplace(pctx.out, tmpfile_after_replace, "&amp;", "&");
+        return try pctx.out.print("{s}", .{result.stdout});
     }
 };
 
-test "code highlighter" {
+test "code processor" {
     std.testing.log_level = .debug;
     const TEST_DATA = .{
         .{
