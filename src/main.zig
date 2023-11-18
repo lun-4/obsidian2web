@@ -390,13 +390,11 @@ pub fn main() anyerror!void {
 pub const PostProcessors = struct {
     checkmark: processors.CheckmarkProcessor,
     cross_page_link: processors.CrossPageLinkProcessor,
-    code: processors.CodeHighlighterProcessor,
+    //    code: processors.CodeHighlighterProcessor,
 };
 
 pub const PreProcessors = struct {
-    // TODO this is a hack that broke page_toc, so it's commented out
-    // see https://github.com/lun-4/obsidian2web/issues/27
-    // escape_hashtags_in_code: processors.EscapeHashtagsInCode,
+    code: processors.CodeblockProcessor,
     tag: processors.TagProcessor,
     page_toc: processors.TableOfContentsProcessor,
     set_first_image: processors.SetFirstImageProcessor,

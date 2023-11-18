@@ -504,6 +504,109 @@ test "code highlighter" {
     try testing.runTestWithDataset(TEST_DATA);
 }
 
+pub const CodeblockProcessor = struct {
+    regex: libpcre.Regex,
+
+    const REGEX = "```(\\w*)\n([\\S\\n--]+)\n```";
+    const Self = @This();
+
+    pub fn init() !Self {
+        return Self{
+            .regex = try libpcre.Regex.compile(REGEX, .{ .Ucp = true, .Utf8 = true, .Ungreedy = true }),
+        };
+    }
+
+    pub fn deinit(self: Self) void {
+        self.regex.deinit();
+    }
+
+    pub fn handle(
+        self: Self,
+        /// Processor context. `pctx.ctx` gives Context
+        pctx: anytype,
+        file_contents: []const u8,
+        captures: []?libpcre.Capture,
+    ) !void {
+        _ = self;
+        const language_match = captures[1].?;
+        const code_text_match = captures[2].?;
+        const language = file_contents[language_match.start..language_match.end];
+        const code_text = file_contents[code_text_match.start..code_text_match.end];
+        logger.debug("found lang={s} {s}", .{ language, code_text });
+
+        var ctx = pctx.ctx;
+        if (!ctx.build_file.config.code_highlight or language.len == 0) {
+            logger.debug("code_hightlight is unset or lang isnt set, ignoring", .{});
+
+            const original_text_match = captures[0].?;
+            return try pctx.out.writeAll(
+                file_contents[original_text_match.start..original_text_match.end],
+            );
+
+            //return try pctx.out.print("<code>\n{s}\n</code>", .{code_text});
+        }
+
+        // spit code_text to separate file, feed to pygments
+        var file = try std.fs.cwd().createFile("/tmp/o2w_sex2", .{});
+        defer file.close();
+
+        try file.writeAll(code_text);
+
+        var argv = root.SliceList.init(ctx.allocator);
+        defer argv.deinit();
+
+        try argv.appendSlice(&[_][]const u8{
+            "pygmentize",
+            "-f",
+            "html",
+            "-l",
+            language,
+            "-O",
+            "cssclass=pygments",
+            "/tmp/o2w_sex2",
+        });
+
+        const result = try std.ChildProcess.exec(.{
+            .allocator = ctx.allocator,
+            .argv = argv.items,
+            .max_output_bytes = 100 * 1024,
+            .expand_arg0 = .expand,
+        });
+
+        defer ctx.allocator.free(result.stdout);
+        defer ctx.allocator.free(result.stderr);
+
+        logger.debug(
+            "pygments sent stdout {d} bytes, stderr {d} bytes",
+            .{ result.stdout.len, result.stderr.len },
+        );
+
+        switch (result.term) {
+            .Exited => |code| if (code != 0) {
+                logger.err("pygmentize returned {} => {s}", .{ code, result.stderr });
+                return error.PygmentsFailed;
+            },
+            else => |code| {
+                logger.err("pygmentize returned {} => {s}", .{ code, result.stderr });
+                return error.PygmentsFailed;
+            },
+        }
+
+        //var tmpfile = try std.fs.cwd().createFile("/tmp/test", .{ .read = true });
+        //defer tmpfile.close();
+
+        // TODO why tf pygments emits &amp;quot; insteadd of &quot; lmfao
+        // i have to run it twice because of brokeen architecture mess
+        //try util.fastWriteReplace(tmpfile.writer(), result.stdout, "&amp;", "&");
+        //       try tmpfile.writer().write(result.stdout);
+        //try tmpfile.seekTo(0);
+        //const tmpfile_after_replace = try tmpfile.reader().readAllAlloc(pctx.ctx.allocator, std.math.maxInt(usize));
+        //defer pctx.ctx.allocator.free(tmpfile_after_replace);
+        //try util.fastWriteReplace(pctx.out, tmpfile_after_replace, "&amp;", "&");
+        return try pctx.out.print("{s}", .{result.stdout});
+    }
+};
+
 pub const SetFirstImageProcessor = struct {
     regex: libpcre.Regex,
 
