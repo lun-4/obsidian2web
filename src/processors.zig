@@ -427,8 +427,6 @@ pub const CodeblockProcessor = struct {
             return try pctx.out.writeAll(
                 file_contents[original_text_match.start..original_text_match.end],
             );
-
-            //return try pctx.out.print("<code>\n{s}\n</code>", .{code_text});
         }
 
         // spit code_text to separate file, feed to pygments
