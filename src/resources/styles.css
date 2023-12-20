@@ -183,3 +183,7 @@ nav li:has(a[aria-current="page"]) {
     bottom: 0;
   }
 }
+
+img {
+  max-width: 170%;
+}
