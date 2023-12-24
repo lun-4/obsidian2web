@@ -6,6 +6,7 @@ const ProcessorContext = root.ProcessorContext;
 const StringBuffer = root.StringBuffer;
 const logger = std.log.scoped(.obsidian2web_processors);
 const util = @import("util.zig");
+const tinymagic = @import("tinymagic.zig");
 const Page = @import("Page.zig");
 
 const DefaultRegexOptions = .{ .Ucp = true, .Utf8 = true };
@@ -99,14 +100,24 @@ pub const CrossPageLinkProcessor = struct {
                 return error.InvalidLinksFound;
             }
 
-            logger.info("INLINE {s}", .{fspath});
+            logger.info("inlining media content @ {s}", .{fspath});
 
-            try pctx.out.print(
-                "<img src=\"{s}\">",
-                .{
-                    ctx.webPath("/images/{s}", .{referenced_file_basename}),
-                },
-            );
+            const file_type = try tinymagic.fileTypeFromPath(fspath);
+
+            switch (file_type) {
+                .image => try pctx.out.print(
+                    "<img src=\"{s}\">",
+                    .{
+                        ctx.webPath("/images/{s}", .{referenced_file_basename}),
+                    },
+                ),
+                .video => try pctx.out.print(
+                    "<video src=\"{s}\" controls>",
+                    .{
+                        ctx.webPath("/images/{s}", .{referenced_file_basename}),
+                    },
+                ),
+            }
         } else {
             // link to page
 
