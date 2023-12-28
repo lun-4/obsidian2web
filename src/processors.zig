@@ -369,7 +369,10 @@ pub const TableOfContentsProcessor = struct {
         try titles.append(try ctx.allocator.dupe(u8, title));
         logger.debug("anchor found: {s}", .{title});
         try pctx.out.print(
-            "<h{d} id=\"{s}\">{s} <a href=\"#{s}\">#</a></h{d}>",
+            // a newline is added after the anchor due to a possible bug in koino
+            // where the data after the anchor doesn't get parsed as markdown but instead as raw html
+            // (which doesn't work because [links](like these) are not really html tags, just text)
+            "<h{d} id=\"{s}\">{s} <a href=\"#{s}\">#</a></h{d}>\n",
             .{ level, web_title_id, title, web_title_id, level },
         );
     }
