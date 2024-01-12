@@ -762,14 +762,8 @@ fn generateTagPages(ctx: Context) !void {
         try writer.print("<div class=\"tag-page\">", .{});
 
         for (entry.value_ptr.items) |page| {
-            var page_fd = try std.fs.cwd().openFile(
-                page.filesystem_path,
-                .{ .mode = .read_only },
-            );
-            defer page_fd.close();
             var preview_buffer: [256]u8 = undefined;
-            const page_preview_text_read_bytes = try page_fd.read(&preview_buffer);
-            const page_preview_text = preview_buffer[0..page_preview_text_read_bytes];
+            const page_preview_text = try page.fetchPreview(&preview_buffer);
             const page_web_path = try page.fetchWebPath(ctx.allocator);
             defer ctx.allocator.free(page_web_path);
             try writer.print(
@@ -892,6 +886,11 @@ fn writeHead(writer: anytype, build_file: BuildFile, title: []const u8, maybe_pa
                 \\ <meta property="og:image" content="{s}" />
             , .{image_url});
         }
+
+        var buffer: [256]u8 = undefined;
+        try writer.print(
+            \\ <meta property="og:description" content="{s}" />
+        , .{util.unsafeHTML(try page.fetchPreview(&buffer))});
     }
 
     try writer.print(

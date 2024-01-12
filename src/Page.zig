@@ -292,3 +292,13 @@ fn customEscapeString(allocator: std.mem.Allocator, input: []const u8) error{Out
     }
     return output;
 }
+
+pub fn fetchPreview(self: Self, buffer: []u8) ![]const u8 {
+    var page_fd = try std.fs.cwd().openFile(
+        self.filesystem_path,
+        .{ .mode = .read_only },
+    );
+    defer page_fd.close();
+    const page_preview_text_read_bytes = try page_fd.read(buffer);
+    return buffer[0..page_preview_text_read_bytes];
+}
