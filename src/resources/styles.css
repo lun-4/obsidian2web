@@ -185,9 +185,9 @@ nav li:has(a[aria-current="page"]) {
 }
 
 img {
-  max-width: 170%;
+  max-width: 100%;
 }
 
 video {
-  max-width: 170%;
+  max-width: 100%;
 }
