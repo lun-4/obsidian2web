@@ -60,7 +60,7 @@ pub const CrossPageLinkProcessor = struct {
 
     pub fn init() !Self {
         return Self{
-            .regex = try libpcre.Regex.compile(REGEX, DefaultRegexOptions),
+            .regex = try libpcre.Regex.compile(REGEX, .{ .Ucp = true, .Utf8 = true, .Ungreedy = true }),
         };
     }
 
