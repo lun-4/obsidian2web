@@ -300,5 +300,36 @@ pub fn fetchPreview(self: Self, buffer: []u8) ![]const u8 {
     );
     defer page_fd.close();
     const page_preview_text_read_bytes = try page_fd.read(buffer);
-    return buffer[0..page_preview_text_read_bytes];
+    var i: usize = 0;
+    var out_cursor: usize = 0;
+
+    // snip dangerous characters from preview
+    while (i < page_preview_text_read_bytes) : (i += 1) {
+        std.debug.print("i {d}, out_cursor {d}, cur {s}\n", .{ i, out_cursor, &[_]u8{buffer[i]} });
+
+        // [[ or ]] become [ or ]
+        const current_char = buffer[i];
+        var next_char_v: ?u8 = null;
+        if (i + 1 < page_preview_text_read_bytes) {
+            next_char_v = buffer[i + 1];
+        }
+        const next_char = next_char_v;
+        if (current_char == '[' and next_char == '[') {
+            buffer[out_cursor] = '[';
+            out_cursor += 1;
+            i += 1; // skip next [
+        } else if (current_char == ']' and next_char == ']') {
+            buffer[out_cursor] = ']';
+            out_cursor += 1;
+            i += 1; // skip next ]
+
+        } else if (current_char == '\n') {
+            buffer[out_cursor] = ' ';
+            out_cursor += 1;
+        } else {
+            buffer[out_cursor] = current_char;
+            out_cursor += 1;
+        }
+    }
+    return buffer[0..out_cursor];
 }
