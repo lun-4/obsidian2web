@@ -305,7 +305,7 @@ pub fn fetchPreview(self: Self, buffer: []u8) ![]const u8 {
 
     // snip dangerous characters from preview
     while (i < page_preview_text_read_bytes) : (i += 1) {
-        std.debug.print("i {d}, out_cursor {d}, cur {s}\n", .{ i, out_cursor, &[_]u8{buffer[i]} });
+        //std.debug.print("i {d}, out_cursor {d}, cur {s}\n", .{ i, out_cursor, &[_]u8{buffer[i]} });
 
         // [[ or ]] become [ or ]
         const current_char = buffer[i];
