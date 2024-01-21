@@ -512,7 +512,7 @@ test "code processor" {
 pub const SetFirstImageProcessor = struct {
     regex: libpcre.Regex,
 
-    const REGEX = "!\\[.+\\]\\((.+)\\)";
+    const REGEX = "!\\[.*\\]\\((.+)\\)";
     const Self = @This();
 
     pub fn init() !Self {
