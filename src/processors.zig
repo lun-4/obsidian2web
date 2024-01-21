@@ -512,7 +512,7 @@ test "code processor" {
 pub const SetFirstImageProcessor = struct {
     regex: libpcre.Regex,
 
-    const REGEX = "!\\[.*\\]\\((.+)\\)";
+    const REGEX = "!(\\[.*\\]\\((.+)\\)|\\[\\[(.+)\\]\\])";
     const Self = @This();
 
     pub fn init() !Self {
@@ -534,12 +534,36 @@ pub const SetFirstImageProcessor = struct {
     ) !void {
         _ = self;
         const full_match = captures[0].?;
-        const match = captures[1].?;
-        const url = file_contents[match.start..match.end];
-        if (pctx.page.maybe_first_image == null) {
-            pctx.page.maybe_first_image = try pctx.ctx.allocator.dupe(u8, url);
+        const full_data = file_contents[full_match.start..full_match.end];
+        _ = try pctx.out.write(full_data);
+
+        for (captures, 0..) |maybe_cap, idx| {
+            var cap = maybe_cap orelse {
+                std.debug.print("cap skip\n", .{});
+                continue;
+            };
+            const text = file_contents[cap.start..cap.end];
+            std.debug.print("cap {} idx {d} value {s}\n", .{ cap, idx, text });
         }
-        _ = try pctx.out.write(file_contents[full_match.start..full_match.end]);
+
+        if (pctx.page.maybe_first_image == null) {
+            if (std.mem.startsWith(u8, full_data, "![[")) {
+                // file from vault
+                const url_capture = captures[3].?;
+                const ref = file_contents[url_capture.start..url_capture.end];
+                const url = try std.fmt.allocPrint(
+                    pctx.ctx.allocator,
+                    "{}",
+                    .{pctx.ctx.webPath("/images/{s}", .{ref})},
+                );
+                pctx.page.maybe_first_image = url;
+            } else {
+                // file from url
+                const url_capture = captures[2].?;
+                const url = file_contents[url_capture.start..url_capture.end];
+                pctx.page.maybe_first_image = try pctx.ctx.allocator.dupe(u8, url);
+            }
+        }
     }
 };
 
