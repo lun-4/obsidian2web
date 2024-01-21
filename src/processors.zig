@@ -406,7 +406,7 @@ test "table of contents processor" {
 pub const CodeblockProcessor = struct {
     regex: libpcre.Regex,
 
-    const REGEX = "```(\\w*)\n([\\S\\n--]+)\n```";
+    const REGEX = "\\`\\`\\`(\\w*)\\n([\\S\\t\\n--]+)\\n\\`\\`\\`";
     const Self = @This();
 
     pub fn init() !Self {
