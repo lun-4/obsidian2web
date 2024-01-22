@@ -1005,11 +1005,16 @@ fn toRFC822(allocator: std.mem.Allocator, timestamp: i64) ![]const u8 {
         "+\"%a, %d %b %Y %H:%M:%S %z\"",
     });
 
+    var env_map = std.process.EnvMap.init(allocator);
+    defer env_map.deinit();
+    try env_map.put("TZ", "UTC");
+
     const result = try std.ChildProcess.exec(.{
         .allocator = allocator,
         .argv = argv.items,
         .max_output_bytes = 256,
         .expand_arg0 = .expand,
+        .env_map = &env_map,
     });
     logger.debug(
         "date sent stdout {d} bytes, stderr {d} bytes",
