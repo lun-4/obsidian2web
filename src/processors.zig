@@ -489,6 +489,8 @@ pub const CodeblockProcessor = struct {
             },
         }
 
+        logger.debug("pygments output {s}", .{result.stdout});
+
         return try pctx.out.print("{s}", .{result.stdout});
     }
 };
@@ -732,4 +734,72 @@ const SnScrape = struct {
         fullUrl: ?[]const u8 = null,
         altText: ?[]const u8 = null,
     };
+};
+
+pub const RecentPagesProcessor = struct {
+    regex: libpcre.Regex,
+
+    const REGEX = "!recent\\[\\]";
+    const Self = @This();
+
+    pub fn init() !Self {
+        return Self{
+            .regex = try libpcre.Regex.compile(REGEX, DefaultRegexOptions),
+        };
+    }
+
+    pub fn deinit(self: Self) void {
+        self.regex.deinit();
+    }
+
+    pub fn handle(
+        self: Self,
+        /// Processor context. `pctx.ctx` gives Context
+        pctx: anytype,
+        file_contents: []const u8,
+        captures: []?libpcre.Capture,
+    ) !void {
+        _ = self;
+        _ = file_contents;
+        _ = captures;
+        const ctx = pctx.ctx;
+
+        const PageList = std.ArrayList(*const Page);
+
+        var pages = PageList.init(ctx.allocator);
+        defer pages.deinit();
+        var it = ctx.pages.iterator();
+        while (it.next()) |entry| {
+            var page = entry.value_ptr;
+            try pages.append(page);
+        }
+
+        std.sort.insertion(*const Page, pages.items, {}, struct {
+            fn inner(context: void, a: *const Page, b: *const Page) bool {
+                _ = context;
+                return a.attributes.ctime > b.attributes.ctime;
+            }
+        }.inner);
+
+        try pctx.out.print("<ul>", .{});
+
+        for (pages.items, 0..) |page, idx| {
+            if (idx > 10) break;
+            var web_path = try page.fetchWebPath(ctx.allocator);
+            defer pctx.ctx.allocator.free(web_path);
+
+            const page_age = page.age();
+            const page_age_days = page_age / 86400;
+
+            try pctx.out.print(
+                "<li><a href=\"{}\">{s}</a>, last created {d} days ago</li>",
+                .{
+                    ctx.webPath("/{s}", .{web_path}),
+                    util.unsafeHTML(page.title),
+                    page_age_days,
+                },
+            );
+        }
+        try pctx.out.print("</ul>", .{});
+    }
 };

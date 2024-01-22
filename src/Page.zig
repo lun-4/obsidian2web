@@ -333,3 +333,8 @@ pub fn fetchPreview(self: Self, buffer: []u8) ![]const u8 {
     }
     return buffer[0..out_cursor];
 }
+
+pub fn age(self: Self) usize {
+    const now = std.time.timestamp();
+    return @intCast(now - self.attributes.ctime);
+}

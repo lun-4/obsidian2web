@@ -382,6 +382,19 @@ pub fn main() anyerror!void {
         try std.fs.cwd().copyFile(fspath, std.fs.cwd(), output_path, .{});
     }
 
+    // end processors are for features that only work once *all* pages
+    // were successfully processed (like tag pages).
+    {
+        var end_processors = try initProcessors(EndProcessors);
+        defer deinitProcessors(end_processors);
+
+        var pages_it = ctx.pages.iterator();
+        logger.info("running end processors", .{});
+        while (pages_it.next()) |entry| {
+            try runProcessors(&ctx, &end_processors, entry.value_ptr, .{ .end = true });
+        }
+    }
+
     // generate index page
     try generateIndexPage(ctx);
     try generateTagPages(ctx);
@@ -390,6 +403,10 @@ pub fn main() anyerror!void {
 pub const PostProcessors = struct {
     checkmark: processors.CheckmarkProcessor,
     cross_page_link: processors.CrossPageLinkProcessor,
+};
+
+pub const EndProcessors = struct {
+    recent_pages: processors.RecentPagesProcessor,
 };
 
 pub const PreProcessors = struct {
@@ -427,6 +444,7 @@ pub fn Holder(comptime ProcessorT: type, comptime WriterT: type) type {
 
 const RunProcessorOptions = struct {
     pre: bool = false,
+    end: bool = false,
 };
 
 pub fn runProcessors(
@@ -450,7 +468,17 @@ pub fn runProcessors(
         );
         break :blk markdown_output_path[0..];
     } else blk: {
-        std.debug.assert(page.state == .main);
+        if (options.end) {
+            if (page.state != .post) {
+                logger.err("expected page to be on post state, got {}", .{page.state});
+                return error.UnexpectedPageState;
+            }
+        } else {
+            if (page.state != .main) {
+                logger.err("expected page to be on main state, got {}", .{page.state});
+                return error.UnexpectedPageState;
+            }
+        }
         break :blk try page.fetchHtmlPath(ctx.allocator);
     };
 
