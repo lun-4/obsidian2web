@@ -792,7 +792,7 @@ pub const RecentPagesProcessor = struct {
             const page_age_days = page_age / 86400;
 
             try pctx.out.print(
-                "<li><a href=\"{}\">{s}</a>, last created {d} days ago</li>",
+                "<li><a href=\"{}\">{s}</a>, created {d} days ago</li>",
                 .{
                     ctx.webPath("/{s}", .{web_path}),
                     util.unsafeHTML(page.title),

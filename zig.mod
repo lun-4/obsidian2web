@@ -17,3 +17,6 @@ root_dependencies:
       - src: git https://github.com/kivikakk/libpcre.zig
       - src: git https://github.com/kivikakk/htmlentities.zig
       - src: git https://github.com/lun-4/zunicode
+  - src: git https://github.com/dmgk/zig-uuid
+    name: uuid
+    main: uuid.zig

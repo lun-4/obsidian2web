@@ -11,6 +11,9 @@ pub const ConfigDirectives = struct {
     code_highlight: bool = false,
     custom_css: ?[]const u8 = null,
     static_twitter_folder: ?[]const u8 = null,
+    rss: ?[]const u8 = null,
+    rss_title: ?[]const u8 = null,
+    rss_description: ?[]const u8 = null,
 };
 
 fn parseBool(string: []const u8) bool {
@@ -57,6 +60,12 @@ pub const BuildFile = struct {
                 config.project_footer = parseBool(value);
             } else if (std.mem.eql(u8, "code_highlight", directive)) {
                 config.code_highlight = parseBool(value);
+            } else if (std.mem.eql(u8, "rss", directive)) {
+                config.rss = value;
+            } else if (std.mem.eql(u8, "rss_title", directive)) {
+                config.rss_title = value;
+            } else if (std.mem.eql(u8, "rss_description", directive)) {
+                config.rss_description = value;
             } else if (std.mem.eql(u8, "custom_css", directive)) {
                 config.custom_css = value;
             } else if (std.mem.eql(u8, "static_twitter_folder", directive)) {

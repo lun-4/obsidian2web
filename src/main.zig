@@ -6,6 +6,7 @@ pub const OwnedStringList = std.ArrayList([]const u8);
 pub const BuildFile = @import("build_file.zig").BuildFile;
 const processors = @import("processors.zig");
 const util = @import("util.zig");
+const uuid = @import("uuid");
 
 pub const std_options = struct {
     pub const log_level = .debug;
@@ -398,6 +399,8 @@ pub fn main() anyerror!void {
     // generate index page
     try generateIndexPage(ctx);
     try generateTagPages(ctx);
+    if (ctx.build_file.config.rss) |rss_root|
+        try generateRSSFeed(ctx, rss_root);
 }
 
 pub const PostProcessors = struct {
@@ -986,6 +989,142 @@ fn createStaticResources(ctx: Context) !void {
             std.debug.assert(written_bytes == resource_text.len);
         }
     }
+}
+
+fn toRFC822(allocator: std.mem.Allocator, timestamp: i64) ![]const u8 {
+    var argv = SliceList.init(allocator);
+    defer argv.deinit();
+
+    const unix_date = try std.fmt.allocPrint(allocator, "@{d}", .{timestamp});
+    defer allocator.free(unix_date);
+
+    try argv.appendSlice(&[_][]const u8{
+        "date",
+        "-d",
+        unix_date,
+        "+\"%a, %d %b %Y %H:%M:%S %z\"",
+    });
+
+    const result = try std.ChildProcess.exec(.{
+        .allocator = allocator,
+        .argv = argv.items,
+        .max_output_bytes = 256,
+        .expand_arg0 = .expand,
+    });
+    logger.debug(
+        "date sent stdout {d} bytes, stderr {d} bytes",
+        .{ result.stdout.len, result.stderr.len },
+    );
+
+    switch (result.term) {
+        .Exited => |code| if (code != 0) {
+            logger.err("date returned {} => {s}", .{ code, result.stderr });
+            return error.DateFailed;
+        },
+        else => |code| {
+            logger.err("date returned {} => {s}", .{ code, result.stderr });
+            return error.DateFailed;
+        },
+    }
+
+    defer allocator.free(result.stderr);
+    return result.stdout;
+}
+
+fn rssGUID(allocator: std.mem.Allocator, title: []const u8) ![]const u8 {
+    var hasher = std.hash.XxHash64.init(69);
+    hasher.update(title);
+    const hash = hasher.final();
+    var rng = std.rand.DefaultPrng.init(hash);
+    var hash_as_uuid = uuid.UUID{ .bytes = undefined };
+    rng.random().bytes(&hash_as_uuid.bytes);
+    return try std.fmt.allocPrint(
+        allocator,
+        "{}",
+        .{hash_as_uuid},
+    );
+}
+
+fn generateRSSFeed(ctx: Context, rss_root: []const u8) !void {
+    var rss_file = try std.fs.Dir.createFile(
+        std.fs.cwd(),
+        "public/feed.xml",
+        .{ .truncate = true },
+    );
+    defer rss_file.close();
+
+    var writer = rss_file.writer();
+
+    const rss_date = try toRFC822(ctx.allocator, std.time.timestamp());
+    defer ctx.allocator.free(rss_date);
+
+    try writer.print(
+        \\<?xml version="1.0" encoding="UTF-8" ?>
+        \\<rss version="2.0">
+        \\<channel>
+        \\ <title>{s}</title>
+        \\ <description>{s}</description>
+        \\ <link>{s}</link>
+        \\ <lastBuildDate>{s}</lastBuildDate>
+        // \\ <pubDate>Sun, 6 Sep 2009 16:20:00 +0000</pubDate>
+        \\ <ttl>1800</ttl>
+    , .{
+        ctx.build_file.config.rss_title orelse return error.MissingRSSTitle,
+        ctx.build_file.config.rss_description orelse return error.MissingRSSDescription,
+        rss_root,
+        rss_date[1 .. rss_date.len - 2],
+    });
+
+    var pages = PageList.init(ctx.allocator);
+    defer pages.deinit();
+    var it = ctx.pages.iterator();
+    while (it.next()) |entry| {
+        var page = entry.value_ptr;
+        try pages.append(page);
+    }
+
+    std.sort.insertion(*const Page, pages.items, {}, struct {
+        fn inner(context: void, a: *const Page, b: *const Page) bool {
+            _ = context;
+            return a.attributes.ctime > b.attributes.ctime;
+        }
+    }.inner);
+
+    for (pages.items, 0..) |page, idx| {
+        if (idx > 20) break;
+
+        var preview_buffer: [256]u8 = undefined;
+        const page_preview_text = try page.fetchPreview(&preview_buffer);
+        const page_web_path = try page.fetchWebPath(ctx.allocator);
+        defer ctx.allocator.free(page_web_path);
+
+        const page_pub_date = try toRFC822(ctx.allocator, page.attributes.ctime);
+        defer ctx.allocator.free(page_pub_date);
+        const guid = try rssGUID(ctx.allocator, page.title);
+        defer ctx.allocator.free(guid);
+        try writer.print(
+            \\ <item>
+            \\  <title>{s}</title>
+            \\  <description>{s}</description>
+            \\  <link>{s}{s}</link>
+            \\  <guid>{s}</guid>
+            \\  <pubDate>{s}</pubDate>
+            \\ </item>
+        ,
+            .{
+                util.unsafeHTML(page.title),
+                util.unsafeHTML(page_preview_text),
+                rss_root,
+                ctx.webPath("/{s}", .{page_web_path}),
+                guid,
+                page_pub_date[1 .. page_pub_date.len - 2],
+            },
+        );
+    }
+    try writer.print(
+        \\</channel>
+        \\</rss>
+    , .{});
 }
 
 test "basic test" {

@@ -1,7 +1,8 @@
 2
-git https://github.com/kivikakk/htmlentities.zig commit-b85de86198a34da5a5d9c07cb8489fbebd06023e
-git https://github.com/kivikakk/koino commit-2fa2ba2485c744feae92dd527157e69f8709450c
-git https://github.com/lun-4/zunicode commit-1d69c64b2c8a94d72f6a44ac4932dcf833a20926
-git https://github.com/nektro/pcre-8.45 commit-10bc0a2fd91f3a40be9825738661f8748eb60e14
+git https://github.com/dmgk/zig-uuid commit-e20228ec21f3f612f5c8bde322ce4a5014b0b829
+git https://github.com/kivikakk/htmlentities.zig commit-e9600772778cc8ae063d1af7bd238b09953b6a80
+git https://github.com/kivikakk/koino commit-2a65bbc0f91b4b50622646b23a2794015f008400
+git https://github.com/lun-4/zunicode commit-9b976e1e72f3712db9be01da6b7b24a5cdd8cd76
+git https://github.com/nektro/pcre-8.45 commit-81166b86236382e19f745e008c7bea33174776a6
 git https://github.com/lun-4/chrono-zig commit-0d7ba9e05217129c3369774262a3c0de00799d62
 git https://github.com/lun-4/libpcre.zig commit-76688fbfb88be3d28fdada1ecbb87aacb6191f89
