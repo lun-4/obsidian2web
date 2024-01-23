@@ -1112,7 +1112,7 @@ fn generateRSSFeed(ctx: Context, rss_root: []const u8) !void {
             \\  <title>{s}</title>
             \\  <description>{s}</description>
             \\  <link>{s}{s}</link>
-            \\  <guid>{s}</guid>
+            \\  <guid isPermaLink="false">{s}</guid>
             \\  <pubDate>{s}</pubDate>
             \\ </item>
         ,
