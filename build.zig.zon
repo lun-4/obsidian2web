@@ -4,8 +4,8 @@
     .minimum_zig_version = "0.12.0",
     .dependencies = .{
         .@"libpcre.zig" = .{
-            .url = "https://github.com/lun-4/libpcre.zig/archive/059892bf72e2da9566fbb3c7a75ea2dd3f9527c6.tar.gz",
-            .hash = "12203a5f2c4f9639543bf89389ec6e6a91f424a57cbd3d44cb957d5bc712022fe4a3",
+            .url = "https://github.com/kivikakk/libpcre.zig/archive/0f3e120c75c297f7d88a5c698d941a9e730a2059.tar.gz",
+            .hash = "12208c8c5b46df969207ca1458b95ebbe988892d1f0e028d1fb95bd58cf55bca6628",
         },
         .chrono = .{
             .url = "https://github.com/leroycep/chrono-zig/archive/bedd9339af9b05c240956b137cb1a5b67a9b74b7.tar.gz",
@@ -16,8 +16,8 @@
             .hash = "12206275494db106adf893d237dda64130436e36cb91b60ddc960bd50b938690a8dc",
         },
         .koino = .{
-            .url = "https://github.com/lun-4/koino/archive/82ddcdac0368c7b92902309b37b7a161b33c80a7.tar.gz",
-            .hash = "12203b017be6a8601ab4ceea8fc4188fcddbd27fc982223b2cad59460104496e6f7e",
+            .url = "https://github.com/kivikakk/koino/archive/26b38766c96fc44757f45db8bddf8d57fbca09a4.tar.gz",
+            .hash = "122078d4bb0c4c9a5fdc6293c480a8d40ee544dab7ba3919bd11e7342ca55ff87f6a",
         },
     },
     .paths = .{
