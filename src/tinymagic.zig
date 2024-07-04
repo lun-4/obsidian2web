@@ -6,7 +6,7 @@ const FileType = enum {
 };
 
 const EXTENSIONS = .{
-    .{ .image, .{ "jpg", "png", "webp", "jpeg", "jxl", "gif" } },
+    .{ .image, .{ "jpg", "png", "webp", "jpeg", "jxl", "gif", "svg" } },
     .{ .video, .{ "mp4", "webm", "mkv" } },
 };
 
