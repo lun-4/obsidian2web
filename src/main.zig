@@ -1098,9 +1098,11 @@ fn writeHead(writer: anytype, build_file: BuildFile, title: []const u8, maybe_pa
     }
     if (build_file.config.rss != null) {
         try writer.print(
-            \\ <link rel="alternate" type="application/rss+xml"
-            \\  title="RSS Feed for {s}"
-            \\  href="/feed.xml" />
+            \\
+            \\    <link rel="alternate" type="application/rss+xml"
+            \\     title="RSS Feed for {s}"
+            \\     href="/feed.xml" />
+            \\
         , .{
             build_file.config.rss_title.?,
         });
