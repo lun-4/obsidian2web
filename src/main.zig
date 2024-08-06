@@ -1242,7 +1242,9 @@ fn generateRSSFeed(ctx: Context, rss_root: []const u8) !void {
 
     try writer.print(
         \\<?xml version="1.0" encoding="UTF-8" ?>
-        \\<rss version="2.0">
+        \\ <rss version="2.0"
+        \\   xmlns:content="http://purl.org/rss/1.0/modules/content/"
+        \\ >
         \\<channel>
         \\ <title>{s}</title>
         \\ <description>{s}</description>
@@ -1284,10 +1286,23 @@ fn generateRSSFeed(ctx: Context, rss_root: []const u8) !void {
         defer ctx.allocator.free(page_pub_date);
         const guid = try rssGUID(ctx.allocator, page.title);
         defer ctx.allocator.free(guid);
+
+        const htmlpath = try page.fetchHtmlPath(ctx.allocator);
+        defer ctx.allocator.free(htmlpath);
+
+        var page_fd = try std.fs.cwd().openFile(htmlpath, .{ .mode = .read_only });
+        defer page_fd.close();
+
+        const raw_page_html = try page_fd.reader().readAllAlloc(ctx.allocator, std.math.maxInt(usize));
+        defer ctx.allocator.free(raw_page_html);
+
         try writer.print(
             \\ <item>
             \\  <title>{s}</title>
             \\  <description>{s}</description>
+            \\  <content:encoded><![CDATA[
+            \\     {s}
+            \\ ]]></content:encoded>
             \\  <link>{s}{s}</link>
             \\  <guid isPermaLink="false">{s}</guid>
             \\  <pubDate>{s}</pubDate>
@@ -1296,6 +1311,7 @@ fn generateRSSFeed(ctx: Context, rss_root: []const u8) !void {
             .{
                 util.unsafeHTML(page.title),
                 util.unsafeHTML(page_preview_text),
+                raw_page_html,
                 rss_root,
                 ctx.webPath("/{s}", .{page_web_path}),
                 guid,
