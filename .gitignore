@@ -6,3 +6,4 @@ src/entities.zig
 deps.zig
 public/
 *.o2w
+.zig-cache/
