@@ -1197,7 +1197,7 @@ fn toRFC822(allocator: std.mem.Allocator, timestamp: i64) ![]const u8 {
     defer env_map.deinit();
     try env_map.put("TZ", "UTC");
 
-    const result = try std.ChildProcess.run(.{
+    const result = try std.process.Child.run(.{
         .allocator = allocator,
         .argv = argv.items,
         .max_output_bytes = 256,
