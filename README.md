@@ -15,8 +15,8 @@ i learned this the hard way. one day i'll fix it.)
 
 # installation
 
-- get a recent master build off https://ziglang.org/download/
-  - tested with `0.12.0`
+- get a recent build off https://ziglang.org/download/
+  - tested with `0.13.0`
 - install libpcre in your system
 
 ```
