@@ -532,7 +532,7 @@ pub const CodeblockProcessor = struct {
             "/tmp/o2w_sex2",
         });
 
-        const result = try std.ChildProcess.run(.{
+        const result = try std.process.Child.run(.{
             .allocator = ctx.allocator,
             .argv = argv.items,
             .max_output_bytes = 100 * 1024,
@@ -693,7 +693,7 @@ pub const StaticTwitterEmbed = struct {
 
         var file = dir.openFile(pathname, .{ .mode = .read_only }) catch |err| switch (err) {
             error.FileNotFound => blk: {
-                var proc = std.ChildProcess.init(
+                var proc = std.process.Child.init(
                     &[_][]const u8{
                         "snscrape",
                         "-vv",
