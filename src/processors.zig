@@ -850,6 +850,23 @@ pub const RecentPagesProcessor = struct {
             }
         }.inner);
 
+        const now = std.time.epoch.EpochSeconds{ .secs = @intCast(std.time.timestamp()) };
+
+        const epoch_day = now.getEpochDay();
+        const year_day = epoch_day.calculateYearDay();
+        const month_day = year_day.calculateMonthDay();
+        const day_seconds = now.getDaySeconds();
+        try pctx.out.print(
+            "list built at <at-date datetime=\"{d}-{d:0>2}-{d:0>2}T{d:0>2}:{d:0>2}:{d:0>2}Z\"><at-date>",
+            .{
+                year_day.year,
+                month_day.month.numeric(),
+                month_day.day_index,
+                day_seconds.getHoursIntoDay(),
+                day_seconds.getMinutesIntoHour(),
+                day_seconds.getSecondsIntoMinute(),
+            },
+        );
         try pctx.out.print("<ul>", .{});
 
         for (pages.items, 0..) |page, idx| {
