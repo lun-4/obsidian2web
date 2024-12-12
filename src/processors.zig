@@ -529,6 +529,8 @@ pub const CodeblockProcessor = struct {
             language,
             "-O",
             "cssclass=pygments",
+            "-O",
+            "prestyles=text-wrap: auto; line-height: 125%;",
             "/tmp/o2w_sex2",
         });
 
