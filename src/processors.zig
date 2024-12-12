@@ -530,7 +530,7 @@ pub const CodeblockProcessor = struct {
             "-O",
             "cssclass=pygments",
             "-O",
-            "prestyles=text-wrap: auto; line-height: 125%;",
+            "prestyles=overflow-x: scroll; line-height: 125%;",
             "/tmp/o2w_sex2",
         });
 
