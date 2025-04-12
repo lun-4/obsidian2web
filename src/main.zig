@@ -425,14 +425,14 @@ pub const PreProcessors = struct {
 
 pub fn initProcessors(comptime ProcessorHolderT: type) !ProcessorHolderT {
     var proc: ProcessorHolderT = undefined;
-    inline for (@typeInfo(ProcessorHolderT).Struct.fields) |field| {
+    inline for (@typeInfo(ProcessorHolderT).@"struct".fields) |field| {
         @field(proc, field.name) = try field.type.init();
     }
     return proc;
 }
 
 pub fn deinitProcessors(procs: anytype) void {
-    inline for (@typeInfo(@TypeOf(procs)).Struct.fields) |field| {
+    inline for (@typeInfo(@TypeOf(procs)).@"struct".fields) |field| {
         field.type.deinit(@field(procs, field.name));
     }
 }
@@ -496,7 +496,7 @@ pub fn runProcessors(
     defer if (!options.pre) ctx.allocator.free(temp_output_path);
 
     inline for (
-        @typeInfo(@typeInfo(@TypeOf(processor_list)).Pointer.child).Struct.fields,
+        @typeInfo(@typeInfo(@TypeOf(processor_list)).pointer.child).@"struct".fields,
     ) |field| {
         const processor = @field(processor_list, field.name);
         logger.debug("running {s}", .{@typeName(field.type)});
@@ -600,7 +600,7 @@ pub fn mainPass(ctx: *Context, page: *Page) !void {
     };
     defer ctx.allocator.free(input_page_contents);
 
-    const options = .{
+    const options = koino.Options{
         .extensions = .{
             .autolink = true,
             .strikethrough = true,
@@ -972,10 +972,10 @@ fn generateTagPages(ctx: Context) !void {
             defer ctx.allocator.free(page_web_path);
             try writer.print(
                 \\ <div class="page-preview">
-                \\ 	<a href="{s}">
-                \\ 		<div class="page-preview-title"><h2>{s}</h2></div>
-                \\ 		<div class="page-preview-text">{s}&hellip;</div>
-                \\ 	</a>
+                \\  <a href="{s}">
+                \\   <div class="page-preview-title"><h2>{s}</h2></div>
+                \\   <div class="page-preview-text">{s}&hellip;</div>
+                \\  </a>
                 \\ </div><p>
             ,
                 .{
@@ -1228,7 +1228,7 @@ fn rssGUID(allocator: std.mem.Allocator, title: []const u8) ![]const u8 {
     var hasher = std.hash.XxHash64.init(69);
     hasher.update(title);
     const hash = hasher.final();
-    var rng = std.rand.DefaultPrng.init(hash);
+    var rng = std.Random.DefaultPrng.init(hash);
     var hash_as_uuid = uuid.UUID{ .bytes = undefined };
     rng.random().bytes(&hash_as_uuid.bytes);
     return try std.fmt.allocPrint(

@@ -33,7 +33,7 @@ pub const BuildFile = struct {
     pub fn parse(allocator: std.mem.Allocator, input_data: []const u8) !Self {
         var includes = StringList.init(allocator);
         errdefer includes.deinit();
-        var file_lines_it = std.mem.split(u8, input_data, "\n");
+        var file_lines_it = std.mem.splitSequence(u8, input_data, "\n");
 
         var config = ConfigDirectives{};
 

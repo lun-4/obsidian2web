@@ -9,7 +9,7 @@ const util = @import("util.zig");
 const tinymagic = @import("tinymagic.zig");
 const Page = @import("Page.zig");
 
-const DefaultRegexOptions = .{ .Ucp = true, .Utf8 = true };
+const DefaultRegexOptions = libpcre.Options{ .Ucp = true, .Utf8 = true };
 
 /// Wrap checkmarks in <code> HTML blocks.
 pub const CheckmarkProcessor = struct {
@@ -87,7 +87,7 @@ pub const CrossPageLinkProcessor = struct {
 
             // inline link to vault file
             const raw_reference = file_contents[match.start + 3 .. match.end - 2];
-            var reference_it = std.mem.split(u8, raw_reference, "|");
+            var reference_it = std.mem.splitSequence(u8, raw_reference, "|");
             const referenced_file_basename = reference_it.next() orelse {
                 logger.err(
                     "no name given to crosslink. raw ref '{s}'",
@@ -214,7 +214,7 @@ pub const CrossPageLinkProcessor = struct {
 
     fn parseResolution(alt: []const u8) AltResult {
         const width_exclusively = std.fmt.parseInt(i32, alt, 10) catch {
-            var resolution_split = std.mem.split(u8, alt, "x");
+            var resolution_split = std.mem.splitSequence(u8, alt, "x");
             const width = resolution_split.next() orelse return AltResult{ .alt_text = alt };
             const width_int = std.fmt.parseInt(i32, width, 10) catch return AltResult{ .alt_text = alt };
             const height_maybe = resolution_split.next();
@@ -678,7 +678,7 @@ pub const StaticTwitterEmbed = struct {
         const twitter_url_match = captures[1].?;
         const twitter_url = file_contents[twitter_url_match.start..twitter_url_match.end];
 
-        var it = std.mem.split(u8, twitter_url, "/");
+        var it = std.mem.splitSequence(u8, twitter_url, "/");
         _ = it.next();
         _ = it.next();
         _ = it.next();

@@ -1,23 +1,24 @@
 .{
-    .name = "obsidian2web",
-    .version = "0.1.0",
-    .minimum_zig_version = "0.12.0",
+    .name = .obsidian2web,
+    .version = "0.1.1",
+    .minimum_zig_version = "0.14.0",
+    .fingerprint = 0xdb9a704608a0bb4a,
     .dependencies = .{
-        .@"libpcre.zig" = .{
-            .url = "git+https://github.com/kivikakk/libpcre.zig#1dc32407368651bc0118b752288c3b87af12ff50",
-            .hash = "1220039ac1b212be156069f9ed7e066571a8da5acc8f1adc33eb1a5c3bcbb4a8b47b",
-        },
         .chrono = .{
-            .url = "git+https://github.com/lun-4/chrono-zig#56b4ea68c06c79988d3f0971be8772cffb73706e",
-            .hash = "1220449e26ca29770522d4e46c5147b126ca4f149d257dc58e4ceca217f7bbfd8090",
-        },
-        .@"zig-uuid" = .{
-            .url = "git+https://github.com/lun-4/zig-uuid#a269818e9b3d503be69319ce8233609bf7f78fe8",
-            .hash = "12202f571bbf695f4c78306182baee0de40f532fba2d2f6cc14e7b81fbf7614f9baf",
+            .url = "git+https://github.com/lun-4/chrono-zig?ref=zig-014#c9e3f92d22acc0587c8f7646febd59b8751ee8f8",
+            .hash = "chrono-0.0.0-XcKmnqXLAwDJknlvxSX70NUFl1RJrhsqMUjZ1p1W3d-D",
         },
         .koino = .{
-            .url = "git+https://github.com/kivikakk/koino#0151bb37714d93688f31e3d7a3d0369106818f26",
-            .hash = "122055057fe62c0a8bcccb3c36a23115db58a185af2c18dd41d0bb4ac083f519ad5d",
+            .url = "/home/luna/git/koino",
+            .hash = "koino-0.1.0-S9LuWgjVBQARvVJpFcqSJZxuOMZDlX2z3tZjj8FOuqSG",
+        },
+        .libpcre_zig = .{
+            .url = "git+https://github.com/kivikakk/libpcre.zig#00b62bc8bea7da75ba61f56555ea6cbaf0dc4e26",
+            .hash = "libpcre_zig-0.1.0-Dtf6Cb04AACKHZO38w4gDrY6to4lWHxOmW6htSqrR-f9",
+        },
+        .zig_uuid = .{
+            .url = "git+https://github.com/lun-4/zig-uuid#78122167bbefeccb89afcb75fdd85400773aa58b",
+            .hash = "zig_uuid-0.0.1-JWcRhNkcAACB_kHBB5tscJ9I8CCBHWr_V4pKTpAnYP9g",
         },
     },
     .paths = .{

@@ -37,7 +37,7 @@ pub const PageAttributes = struct {
     }
 
     fn parseDate(date_string: []const u8) !i64 {
-        var it = std.mem.split(u8, date_string, "-");
+        var it = std.mem.splitSequence(u8, date_string, "-");
         const year = try std.fmt.parseInt(std.time.epoch.Year, it.next().?, 10);
         const month_int = try std.fmt.parseInt(u4, it.next().?, 10);
         const month = try std.meta.intToEnum(std.time.epoch.Month, month_int);
@@ -66,11 +66,11 @@ pub const PageAttributes = struct {
 
         logger.debug("idx {d} {d}", .{ first_plus_sign_idx, last_plus_sign_idx });
         const attributes_text = first_bytes[first_plus_sign_idx + 3 .. last_plus_sign_idx];
-        var lines = std.mem.split(u8, attributes_text, "\n");
+        var lines = std.mem.splitSequence(u8, attributes_text, "\n");
         logger.debug("text '{s}'", .{attributes_text});
         while (lines.next()) |line| {
             if (line.len == 0) continue;
-            var key_value_iterator = std.mem.split(u8, line, "=");
+            var key_value_iterator = std.mem.splitSequence(u8, line, "=");
             const key = std.mem.trim(u8, key_value_iterator.next() orelse continue, " ");
             const value = std.mem.trim(u8, key_value_iterator.next() orelse {
                 logger.err("key '{s}' does not have value", .{key});

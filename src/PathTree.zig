@@ -44,7 +44,7 @@ pub fn deinit(self: *Self) void {
 /// Recursively walk from a PageFolder to another PageFolder, using `to` as
 /// a guide.
 pub fn walkToDir(from: PageFolder, to: []const u8) PageFolder {
-    var it = std.mem.split(u8, to, std.fs.path.sep_str);
+    var it = std.mem.splitSequence(u8, to, std.fs.path.sep_str);
     const component = it.next().?;
     _ = it.next() orelse return from;
     return walkToDir(from.get(component).?.dir, to[component.len + 1 ..]);
@@ -52,7 +52,7 @@ pub fn walkToDir(from: PageFolder, to: []const u8) PageFolder {
 
 pub fn addPath(self: *Self, fspath: []const u8) !void {
     const total_seps = std.mem.count(u8, fspath, std.fs.path.sep_str);
-    var path_it = std.mem.split(u8, fspath, std.fs.path.sep_str);
+    var path_it = std.mem.splitSequence(u8, fspath, std.fs.path.sep_str);
 
     var current_page: ?*PageFolder = &self.root;
     var idx: usize = 0;

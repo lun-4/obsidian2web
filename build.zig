@@ -8,10 +8,10 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const pcre_pkg = b.dependency("libpcre.zig", .{ .optimize = optimize, .target = target });
+    const pcre_pkg = b.dependency("libpcre_zig", .{ .optimize = optimize, .target = target });
     const chrono_pkg = b.dependency("chrono", .{ .optimize = optimize, .target = target });
     const koino_pkg = b.dependency("koino", .{ .optimize = optimize, .target = target });
-    const uuid_pkg = b.dependency("zig-uuid", .{ .optimize = optimize, .target = target });
+    const uuid_pkg = b.dependency("zig_uuid", .{ .optimize = optimize, .target = target });
 
     const Mod = struct { name: []const u8, mod: *std.Build.Module };
 
