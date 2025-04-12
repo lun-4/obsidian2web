@@ -175,6 +175,7 @@ pub const Context = struct {
     arenas: ArenaHolder,
     pages: PageMap,
     titles: TitleMap,
+    fspaths: OwnedStringList,
     tree: PathTree,
 
     const Self = @This();
@@ -192,6 +193,7 @@ pub const Context = struct {
             .pages = PageMap.init(allocator),
             .titles = TitleMap.init(allocator),
             .tree = PathTree.init(allocator),
+            .fspaths = OwnedStringList.init(allocator),
         };
     }
 
@@ -204,6 +206,7 @@ pub const Context = struct {
         self.pages.deinit();
         self.titles.deinit();
         self.tree.deinit();
+        self.fspaths.deinit();
     }
 
     pub fn pathAllocator(self: *Self) std.mem.Allocator {
@@ -225,6 +228,7 @@ pub const Context = struct {
                 titles_result.value_ptr.* = owned_fspath;
             }
 
+            try self.fspaths.append(owned_fspath);
             return;
         }
 
@@ -371,16 +375,24 @@ pub fn main() anyerror!void {
     }
 
     try std.fs.cwd().makePath("public/images");
-    var titles_it = ctx.titles.iterator();
-    while (titles_it.next()) |entry| {
-        const fspath = entry.value_ptr.*;
+    for (ctx.fspaths.items) |fspath| {
         const maybe_page = ctx.pages.get(fspath);
         if (maybe_page != null) continue;
+        // TODO UGLY HACK SHOULD REMOVE IT
+        const vault_path = ctx.build_file.vault_path;
+        const include_relpath = ctx.build_file.includes.items[0];
+        var include_fspath_buf: [std.posix.PATH_MAX]u8 = undefined;
+        const include_fspath = try std.fmt.bufPrint(
+            &include_fspath_buf,
+            "{s}/{s}",
+            .{ vault_path, include_relpath },
+        );
+        const stripped_fspath = util.stripLeft(fspath, include_fspath);
         var output_path_buffer: [std.posix.PATH_MAX]u8 = undefined;
         const output_path = try std.fmt.bufPrint(
             &output_path_buffer,
             "public/images/{s}",
-            .{std.fs.path.basename(fspath)},
+            .{stripped_fspath},
         );
         try std.fs.cwd().copyFile(fspath, std.fs.cwd(), output_path, .{});
     }

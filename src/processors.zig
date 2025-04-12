@@ -98,13 +98,24 @@ pub const CrossPageLinkProcessor = struct {
             const maybe_alt_text = reference_it.next();
             const maybe_scale = reference_it.next();
 
-            const fspath = ctx.titles.get(referenced_file_basename) orelse {
+            var maybe_fspath: ?[]const u8 = null;
+            for (ctx.fspaths.items) |fspath| {
+                logger.debug("{s} ::: {s}", .{ fspath, referenced_file_basename });
+                if (std.mem.endsWith(u8, fspath, referenced_file_basename)) {
+                    maybe_fspath = fspath;
+                    break;
+                }
+            }
+
+            if (maybe_fspath == null) {
                 logger.err(
                     "referenced name: '{s}' not found",
                     .{referenced_file_basename},
                 );
                 return error.InvalidLinksFound;
-            };
+            }
+            const fspath = maybe_fspath.?;
+
             const maybe_page = ctx.pages.get(fspath);
             if (maybe_page != null) {
                 logger.err(
