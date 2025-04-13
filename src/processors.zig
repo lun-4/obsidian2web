@@ -88,13 +88,15 @@ pub const CrossPageLinkProcessor = struct {
             // inline link to vault file
             const raw_reference = file_contents[match.start + 3 .. match.end - 2];
             var reference_it = std.mem.splitSequence(u8, raw_reference, "|");
-            const referenced_file_basename = reference_it.next() orelse {
+            var referenced_file_basename = reference_it.next() orelse {
                 logger.err(
                     "no name given to crosslink. raw ref '{s}'",
                     .{raw_reference},
                 );
                 return error.InvalidLinksFound;
             };
+            // TODO (DO NOT MERGE, HACK): basenaming so files arent broken
+            referenced_file_basename = std.fs.path.basename(referenced_file_basename);
             const maybe_alt_text = reference_it.next();
             const maybe_scale = reference_it.next();
 

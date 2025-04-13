@@ -375,24 +375,17 @@ pub fn main() anyerror!void {
     }
 
     try std.fs.cwd().makePath("public/images");
-    for (ctx.fspaths.items) |fspath| {
+    var titles_it = ctx.titles.iterator();
+    while (titles_it.next()) |entry| {
+        const fspath = entry.value_ptr.*;
+        // TODO (DO NOT MERGE): attempt to create unique names inside images (w/ folder paths?)
         const maybe_page = ctx.pages.get(fspath);
         if (maybe_page != null) continue;
-        // TODO UGLY HACK SHOULD REMOVE IT
-        const vault_path = ctx.build_file.vault_path;
-        const include_relpath = ctx.build_file.includes.items[0];
-        var include_fspath_buf: [std.posix.PATH_MAX]u8 = undefined;
-        const include_fspath = try std.fmt.bufPrint(
-            &include_fspath_buf,
-            "{s}/{s}",
-            .{ vault_path, include_relpath },
-        );
-        const stripped_fspath = util.stripLeft(fspath, include_fspath);
         var output_path_buffer: [std.posix.PATH_MAX]u8 = undefined;
         const output_path = try std.fmt.bufPrint(
             &output_path_buffer,
             "public/images/{s}",
-            .{stripped_fspath},
+            .{std.fs.path.basename(fspath)},
         );
         try std.fs.cwd().copyFile(fspath, std.fs.cwd(), output_path, .{});
     }
