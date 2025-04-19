@@ -85,58 +85,49 @@ pub const CrossPageLinkProcessor = struct {
 
         if (full_link_text[0] == '!') {
 
-            // inline link to vault file
+            // inline link to vault file (as an unrenderable page AKA asset)
             const raw_reference = file_contents[match.start + 3 .. match.end - 2];
             var reference_it = std.mem.splitSequence(u8, raw_reference, "|");
-            var referenced_file_basename = reference_it.next() orelse {
+            const referenced_file = reference_it.next() orelse {
                 logger.err(
                     "no name given to crosslink. raw ref '{s}'",
                     .{raw_reference},
                 );
                 return error.InvalidLinksFound;
             };
-            // TODO (DO NOT MERGE, HACK): basenaming so files arent broken
-            referenced_file_basename = std.fs.path.basename(referenced_file_basename);
+
             const maybe_alt_text = reference_it.next();
             const maybe_scale = reference_it.next();
 
-            var maybe_fspath: ?[]const u8 = null;
-            for (ctx.fspaths.items) |fspath| {
-                logger.debug("{s} ::: {s}", .{ fspath, referenced_file_basename });
-                if (std.mem.endsWith(u8, fspath, referenced_file_basename)) {
-                    maybe_fspath = fspath;
+            var maybe_asset: ?*Page = null;
+            var assets_it = ctx.assets.iterator();
+            while (assets_it.next()) |entry| {
+                const asset: *Page = entry.value_ptr;
+                const fspath = asset.filesystem_path;
+                logger.debug("{s} ::: {s}", .{ fspath, referenced_file });
+                if (std.mem.endsWith(u8, fspath, referenced_file)) {
+                    maybe_asset = asset;
                     break;
                 }
             }
 
-            if (maybe_fspath == null) {
+            if (maybe_asset == null) {
                 logger.err(
                     "referenced name: '{s}' not found",
-                    .{referenced_file_basename},
+                    .{referenced_file},
                 );
                 return error.InvalidLinksFound;
             }
-            const fspath = maybe_fspath.?;
+            const asset = maybe_asset.?;
 
-            const maybe_page = ctx.pages.get(fspath);
-            if (maybe_page != null) {
-                logger.err(
-                    "referenced name: {s} is not an inline-able file, but a page.",
-                    .{referenced_file_basename},
-                );
-                return error.InvalidLinksFound;
-            }
-
-            logger.info("inlining media content @ {s}", .{fspath});
-
-            const file_type = try tinymagic.fileTypeFromPath(fspath);
-
+            logger.info("inlining media content @ {s}", .{asset.filesystem_path});
+            const file_type = try tinymagic.fileTypeFromPath(asset.filesystem_path);
             switch (file_type) {
                 .image => {
                     try pctx.out.print(
                         "<img src=\"{s}\"",
                         .{
-                            ctx.webPath("/images/{s}", .{referenced_file_basename}),
+                            ctx.webPath("/assets/{s}", .{asset.relativePath()}),
                         },
                     );
                     if (maybe_alt_text) |alt_text| {
@@ -151,22 +142,41 @@ pub const CrossPageLinkProcessor = struct {
                 .video => try pctx.out.print(
                     "<video src=\"{s}\" controls>",
                     .{
-                        ctx.webPath("/images/{s}", .{referenced_file_basename}),
+                        ctx.webPath("/assets/{s}", .{asset.relativePath()}),
                     },
                 ),
             }
         } else {
             // link to page
 
-            const referenced_title = file_contents[match.start + 2 .. match.end - 2];
+            const reference = file_contents[match.start + 2 .. match.end - 2];
             logger.debug(
                 "{s} has link to '{s}'",
-                .{ pctx.page.title, referenced_title },
+                .{ pctx.page.title, reference },
             );
 
-            const maybe_page_local_path = ctx.titles.get(referenced_title);
-            if (maybe_page_local_path) |page_local_path| {
-                var referenced_page = ctx.pages.get(page_local_path).?;
+            var maybe_page: ?*Page = null;
+            var pages_it = ctx.pages.iterator();
+            while (pages_it.next()) |entry| {
+                const page: *Page = entry.value_ptr;
+                const fspath = page.filesystem_path;
+                logger.debug("PAGE {s} :: COMPARE :: {s}", .{ fspath, reference });
+                if (std.mem.endsWith(u8, fspath, reference)) {
+                    maybe_page = page;
+                    break;
+                }
+
+                // pages' fspaths ends in .md or .canvas but we don't
+                // reference .md or .canvas, instead use a stripped path without those
+                const relpath = page.relativePathWithoutExtension();
+                logger.debug("PAGE REL {s} :: COMPARE :: {s}", .{ relpath, reference });
+                if (std.mem.endsWith(u8, relpath, reference)) {
+                    maybe_page = page;
+                    break;
+                }
+            }
+
+            if (maybe_page) |referenced_page| {
                 const web_path = try referenced_page.fetchWebPath(pctx.ctx.allocator);
                 defer pctx.ctx.allocator.free(web_path);
 
@@ -179,18 +189,18 @@ pub const CrossPageLinkProcessor = struct {
                     "<a href=\"{}\">{s}</a>",
                     .{
                         ctx.webPath("/{s}", .{web_path}),
-                        util.unsafeHTML(referenced_title),
+                        util.unsafeHTML(reference),
                     },
                 );
             } else {
                 if (ctx.build_file.config.strict_links) {
                     logger.err(
-                        "file '{s}' has link to file '{s}' which is not included!",
-                        .{ pctx.page, referenced_title },
+                        "file '{s}' has link to file '{s}' which is not included as a page!",
+                        .{ pctx.page, reference },
                     );
                     return error.InvalidLinksFound;
                 } else {
-                    try pctx.out.print("[[{s}]]", .{referenced_title});
+                    try pctx.out.print("[[{s}]]", .{reference});
                 }
             }
         }
