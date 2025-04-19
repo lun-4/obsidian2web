@@ -27,7 +27,7 @@ pub const State = union(enum) {
     post: void,
 };
 
-pub const PageType = enum { md, canvas };
+pub const PageType = enum { md, canvas, asset };
 
 pub const PageAttributes = struct {
     ctime: i64,
@@ -156,6 +156,14 @@ pub const PageAttributes = struct {
     }
 };
 
+pub fn relativePathWithoutExtension(self: Self) []const u8 {
+    return switch (self.page_type) {
+        .asset => unreachable,
+        .md => self.filesystem_path[0 .. self.filesystem_path.len - 3],
+        .canvas => self.filesystem_path[0 .. self.filesystem_path.len - 7],
+    };
+}
+
 /// assumes given path is a ".md" file.
 pub fn fromPath(ctx: *const Context, fspath: []const u8) !Self {
     const title_offset: usize =
@@ -177,6 +185,22 @@ pub fn fromPath(ctx: *const Context, fspath: []const u8) !Self {
         .filesystem_path = fspath,
         .attributes = attributes,
         .title = title,
+    };
+}
+
+pub fn fromAssetPath(ctx: *const Context, fspath: []const u8) !Self {
+    logger.info("create asset with fspath {s}", .{fspath});
+
+    var file = try std.fs.cwd().openFile(fspath, .{});
+    defer file.close();
+    const attributes = try PageAttributes.fromFile(file);
+
+    return Self{
+        .page_type = .asset,
+        .ctx = ctx,
+        .filesystem_path = fspath,
+        .attributes = attributes,
+        .title = "",
     };
 }
 
@@ -235,6 +259,7 @@ pub fn fetchHtmlPath(self: Self, allocator: std.mem.Allocator) ![]const u8 {
             ".canvas",
             ".html",
         ),
+        .asset => unreachable,
     }
 }
 

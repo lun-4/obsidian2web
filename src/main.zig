@@ -174,7 +174,8 @@ pub const Context = struct {
     vault_dir: std.fs.Dir,
     arenas: ArenaHolder,
     pages: PageMap,
-    titles: TitleMap,
+    assets: PageMap,
+    fspaths: OwnedStringList,
     tree: PathTree,
 
     const Self = @This();
@@ -190,8 +191,9 @@ pub const Context = struct {
             .vault_dir = vault_dir,
             .arenas = ArenaHolder.init(allocator),
             .pages = PageMap.init(allocator),
-            .titles = TitleMap.init(allocator),
+            .assets = PageMap.init(allocator),
             .tree = PathTree.init(allocator),
+            .fspaths = OwnedStringList.init(allocator),
         };
     }
 
@@ -201,9 +203,14 @@ pub const Context = struct {
             var it = self.pages.iterator();
             while (it.next()) |entry| entry.value_ptr.deinit();
         }
+        {
+            var it = self.assets.iterator();
+            while (it.next()) |entry| entry.value_ptr.deinit();
+        }
         self.pages.deinit();
-        self.titles.deinit();
+        self.assets.deinit();
         self.tree.deinit();
+        self.fspaths.deinit();
     }
 
     pub fn pathAllocator(self: *Self) std.mem.Allocator {
@@ -217,32 +224,26 @@ pub const Context = struct {
         const must_render =
             std.mem.endsWith(u8, path, ".md") or std.mem.endsWith(u8, path, ".canvas");
 
-        if (!must_render) {
-            const basename = std.fs.path.basename(owned_fspath);
-
-            const titles_result = try self.titles.getOrPut(basename);
-            if (!titles_result.found_existing) {
-                titles_result.value_ptr.* = owned_fspath;
+        if (must_render) {
+            const pages_result = try self.pages.getOrPut(owned_fspath);
+            if (!pages_result.found_existing) {
+                const page = try Page.fromPath(self, owned_fspath);
+                pages_result.value_ptr.* = page;
+                //try self.titles.put(page.title, page.filesystem_path);
+                try self.tree.addPath(page.filesystem_path);
             }
-
-            return;
-        }
-
-        const pages_result = try self.pages.getOrPut(owned_fspath);
-        if (!pages_result.found_existing) {
-            const page = try Page.fromPath(self, owned_fspath);
-            pages_result.value_ptr.* = page;
-            try self.titles.put(page.title, page.filesystem_path);
-            try self.tree.addPath(page.filesystem_path);
+        } else {
+            // don't render, instead create as an Asset (a variant of Page)
+            const assets_result = try self.assets.getOrPut(owned_fspath);
+            if (!assets_result.found_existing) {
+                const asset = try Page.fromAssetPath(self, owned_fspath);
+                assets_result.value_ptr.* = asset;
+            }
         }
     }
 
     pub fn pageFromPath(self: Self, path: []const u8) ?Page {
         return self.pages.get(path);
-    }
-
-    pub fn pageFromTitle(self: Self, title: []const u8) ?Page {
-        return self.pages.get(self.titles.get(title) orelse return null);
     }
 
     pub fn webPath(
@@ -370,19 +371,23 @@ pub fn main() anyerror!void {
         }
     }
 
-    try std.fs.cwd().makePath("public/images");
-    var titles_it = ctx.titles.iterator();
-    while (titles_it.next()) |entry| {
-        const fspath = entry.value_ptr.*;
-        const maybe_page = ctx.pages.get(fspath);
-        if (maybe_page != null) continue;
+    try std.fs.cwd().makePath("public/assets");
+    var assets_it = ctx.assets.iterator();
+    while (assets_it.next()) |entry| {
+        const asset: Page = entry.value_ptr.*;
         var output_path_buffer: [std.posix.PATH_MAX]u8 = undefined;
         const output_path = try std.fmt.bufPrint(
             &output_path_buffer,
-            "public/images/{s}",
-            .{std.fs.path.basename(fspath)},
+            "public/assets/{s}",
+            .{asset.relativePath()},
         );
-        try std.fs.cwd().copyFile(fspath, std.fs.cwd(), output_path, .{});
+
+        const leading_path_to_file = std.fs.path.dirname(output_path).?;
+        logger.info("mkdir asset {s}", .{leading_path_to_file});
+        try std.fs.cwd().makePath(leading_path_to_file);
+
+        logger.info("cp asset {s} -> {s}", .{ asset.filesystem_path, output_path });
+        try std.fs.cwd().copyFile(asset.filesystem_path, std.fs.cwd(), output_path, .{});
     }
 
     // end processors are for features that only work once *all* pages
@@ -662,6 +667,7 @@ pub fn mainPass(ctx: *Context, page: *Page) !void {
             \\  <main class="text">
         , .{});
         switch (page.page_type) {
+            .asset => unreachable,
             .md => {
                 try output.print(
                     \\    <h2>{s}</h2><p>
