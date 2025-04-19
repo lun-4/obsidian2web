@@ -229,7 +229,6 @@ pub const Context = struct {
             if (!pages_result.found_existing) {
                 const page = try Page.fromPath(self, owned_fspath);
                 pages_result.value_ptr.* = page;
-                //try self.titles.put(page.title, page.filesystem_path);
                 try self.tree.addPath(page.filesystem_path);
             }
         } else {
