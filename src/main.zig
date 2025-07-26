@@ -1107,10 +1107,11 @@ fn writeHead(writer: anytype, build_file: BuildFile, title: []const u8, maybe_pa
             \\
             \\    <link rel="alternate" type="application/rss+xml"
             \\     title="RSS Feed for {s}"
-            \\     href="/feed.xml" />
+            \\     href="{s}/feed.xml" />
             \\
         , .{
             build_file.config.rss_title.?,
+            build_file.config.webroot,
         });
     }
 
@@ -1320,7 +1321,7 @@ fn generateRSSFeed(ctx: Context, rss_root: []const u8) !void {
             \\  <content:encoded><![CDATA[
             \\     {s}
             \\ ]]></content:encoded>
-            \\  <link>{s}{s}</link>
+            \\  <link>{s}/{s}</link>
             \\  <guid isPermaLink="false">{s}</guid>
             \\  <pubDate>{s}</pubDate>
             \\ </item>
@@ -1330,7 +1331,7 @@ fn generateRSSFeed(ctx: Context, rss_root: []const u8) !void {
                 util.unsafeHTML(page_preview_text),
                 raw_page_html,
                 rss_root,
-                ctx.webPath("/{s}", .{page_web_path}),
+                page_web_path,
                 guid,
                 page_pub_date[1 .. page_pub_date.len - 2],
             },
