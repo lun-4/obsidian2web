@@ -1093,7 +1093,8 @@ fn writeHead(writer: anytype, build_file: BuildFile, title: []const u8, maybe_pa
         if (page.maybe_first_image) |image_url| {
             try writer.print(
                 \\ <meta property="og:image" content="{s}" />
-            , .{image_url});
+                \\ <meta property="og:image:url" content="{s}" />
+            , .{ image_url, image_url });
         }
 
         var buffer: [256]u8 = undefined;
