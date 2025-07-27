@@ -701,7 +701,7 @@ pub fn mainPass(ctx: *Context, page: *Page) !void {
                     width: usize,
                     height: usize,
                     type: []const u8,
-                    text: []const u8,
+                    text: []const u8 = "",
                     color: []const u8 = "0",
                 };
 
