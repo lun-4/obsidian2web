@@ -465,6 +465,15 @@ pub fn runProcessors(
 ) !void {
     logger.info("running processors processing {} {}", .{ page, options });
 
+    if (page.page_type == .canvas) {
+        // skip processors for canvas, as they're made for HTML can break the json
+        defer page.state = if (options.pre)
+            .{ .pre = page.filesystem_path }
+        else
+            .{ .post = {} };
+        return;
+    }
+
     const temp_output_path: []const u8 = if (options.pre) blk: {
         std.debug.assert(page.state == .unbuilt);
         var markdown_output_path = "/tmp/sex.md"; // TODO fetchTemporaryMarkdownPath();
@@ -712,7 +721,12 @@ pub fn mainPass(ctx: *Context, page: *Page) !void {
                     edges: []CanvasEdge,
                 };
 
-                var parsed = try std.json.parseFromSlice(CanvasData, ctx.allocator, input_page_contents, .{ .allocate = .alloc_always });
+                var parsed = try std.json.parseFromSlice(
+                    CanvasData,
+                    ctx.allocator,
+                    input_page_contents,
+                    .{ .allocate = .alloc_always, .ignore_unknown_fields = true },
+                );
                 defer parsed.deinit();
 
                 const canvas = parsed.value;
