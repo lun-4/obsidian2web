@@ -645,14 +645,40 @@ pub const SetFirstImageProcessor = struct {
         if (pctx.page.maybe_first_image == null) {
             if (std.mem.startsWith(u8, full_data, "![[")) {
                 // file from vault
+                // TODO fix repetition between this and CrossPageLinkProcessor
                 const url_capture = captures[3].?;
-                const ref = file_contents[url_capture.start..url_capture.end];
-                const url = try std.fmt.allocPrint(
-                    pctx.ctx.allocator,
-                    "{}",
-                    .{pctx.ctx.webPath("/images/{s}", .{ref})},
-                );
-                pctx.page.maybe_first_image = url;
+                const raw_reference = file_contents[url_capture.start..url_capture.end];
+
+                var reference_it = std.mem.splitSequence(u8, raw_reference, "|");
+                const referenced_file = reference_it.next() orelse {
+                    logger.err(
+                        "no name given to crosslink. raw ref '{s}'",
+                        .{raw_reference},
+                    );
+                    return error.InvalidLinksFound;
+                };
+
+                var maybe_asset: ?*Page = null;
+                var assets_it = pctx.ctx.assets.iterator();
+                while (assets_it.next()) |entry| {
+                    const asset: *Page = entry.value_ptr;
+                    const fspath = asset.filesystem_path;
+                    logger.debug("{s} ::: {s}", .{ fspath, referenced_file });
+                    if (std.mem.endsWith(u8, fspath, referenced_file)) {
+                        maybe_asset = asset;
+                        break;
+                    }
+                }
+
+                if (maybe_asset == null) {
+                    logger.err(
+                        "referenced name: '{s}' not found",
+                        .{referenced_file},
+                    );
+                    return error.InvalidLinksFound;
+                }
+                const asset = maybe_asset.?;
+                pctx.page.maybe_first_image = try pctx.ctx.allocator.dupe(u8, asset.relativePath());
             } else {
                 // file from url
                 const url_capture = captures[2].?;

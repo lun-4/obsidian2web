@@ -403,8 +403,8 @@ pub fn main() anyerror!void {
     }
 
     // generate index page
-    try generateIndexPage(ctx);
-    try generateTagPages(ctx);
+    try generateIndexPage(&ctx);
+    try generateTagPages(&ctx);
     if (ctx.build_file.config.rss) |rss_root|
         try generateRSSFeed(ctx, rss_root);
 }
@@ -643,7 +643,7 @@ pub fn mainPass(ctx: *Context, page: *Page) !void {
 
     // write time
     {
-        try writeHead(output, ctx.build_file, page.title, page.*);
+        try writeHead(output, ctx, page.title, page.*);
 
         try writePageTree(output, ctx, .{}, page);
         try output.print(
@@ -872,7 +872,7 @@ pub fn mainPass(ctx: *Context, page: *Page) !void {
     }
 }
 
-fn generateIndexPage(ctx: Context) !void {
+fn generateIndexPage(ctx: *const Context) !void {
     // if an index file was provided in the config, copypaste the resulting
     // HTML as that'll work
     if (ctx.build_file.config.index) |relative_index_path| {
@@ -906,8 +906,8 @@ fn generateIndexPage(ctx: Context) !void {
 
         const writer = index_out_fd.writer();
 
-        try writeHead(writer, ctx.build_file, "Index Page", null);
-        try writePageTree(writer, &ctx, .{}, null);
+        try writeHead(writer, ctx, "Index Page", null);
+        try writePageTree(writer, ctx, .{}, null);
         try writeEmptyPage(writer, ctx.build_file);
     }
 }
@@ -915,7 +915,7 @@ fn generateIndexPage(ctx: Context) !void {
 const PageList = std.ArrayList(*const Page);
 
 const TagMap = std.StringHashMap(PageList);
-fn generateTagPages(ctx: Context) !void {
+fn generateTagPages(ctx: *const Context) !void {
     var tag_map = TagMap.init(ctx.allocator);
 
     defer {
@@ -960,7 +960,7 @@ fn generateTagPages(ctx: Context) !void {
 
         var writer = output_file.writer();
 
-        try writeHead(writer, ctx.build_file, tag_name, null);
+        try writeHead(writer, ctx, tag_name, null);
 
         try writer.print(
             \\ <h3 style="text-align:center"><a href="{s}">Go to tag index</a></h3>
@@ -1024,7 +1024,7 @@ fn generateTagPages(ctx: Context) !void {
     try generateTagIndex(ctx, tag_map);
 }
 
-fn generateTagIndex(ctx: Context, tag_map: TagMap) !void {
+fn generateTagIndex(ctx: *const Context, tag_map: TagMap) !void {
     logger.info("generating tag index", .{});
     var output_file = try std.fs.cwd().createFile(
         "public/_/tag_index.html",
@@ -1034,7 +1034,7 @@ fn generateTagIndex(ctx: Context, tag_map: TagMap) !void {
 
     var writer = output_file.writer();
 
-    try writeHead(writer, ctx.build_file, "Tag Index", null);
+    try writeHead(writer, ctx, "Tag Index", null);
     _ = try writer.write(
         \\  </nav>
         \\  <main class="text">
@@ -1088,7 +1088,8 @@ fn generateTagIndex(ctx: Context, tag_map: TagMap) !void {
     );
 }
 
-fn writeHead(writer: anytype, build_file: BuildFile, title: []const u8, maybe_page: ?Page) !void {
+fn writeHead(writer: anytype, ctx: *const Context, title: []const u8, maybe_page: ?Page) !void {
+    const build_file = ctx.build_file;
     try writer.print(
         \\<!DOCTYPE html>
         \\<html lang="en">
@@ -1108,7 +1109,10 @@ fn writeHead(writer: anytype, build_file: BuildFile, title: []const u8, maybe_pa
             try writer.print(
                 \\ <meta property="og:image" content="{s}" />
                 \\ <meta property="og:image:url" content="{s}" />
-            , .{ image_url, image_url });
+            , .{
+                ctx.webPath("/assets/{s}", .{image_url}),
+                ctx.webPath("/assets/{s}", .{image_url}),
+            });
         }
 
         var buffer: [256]u8 = undefined;
