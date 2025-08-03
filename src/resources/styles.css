@@ -210,10 +210,10 @@ nav li:has(a[aria-current="page"]) {
   .tag-toc {
     position: sticky;
     top: 2rem;
-    width: 100rem;
+    max-width: 24rem;
 
     /* allow the toc to scroll if it gets taller than the viewport */
-    overflow-y: auto;
+    /* overflow-y: auto; */
     max-height: calc(100vh - 2rem);
     padding-right: 2rem;
   }
@@ -736,4 +736,19 @@ button:hover {
 
 .pygments .w {
   tab-size: 4;
+}
+
+.tag-reference {
+  text-align: center;
+  border: 1px solid var(--color-ui-1, #6688);
+  border-radius: 0.75em;
+}
+
+.tag-reference-text {
+  color: white;
+  font-size: 0.85rem;
+}
+
+.tag-reference-number {
+  color: gray;
 }

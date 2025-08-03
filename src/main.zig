@@ -989,6 +989,10 @@ fn generateTagPages(ctx: *const Context) !void {
 
         const maybe_counters = tag_counters.get(tag_name);
         if (maybe_counters) |counters| {
+            try writer.print(
+                \\ <h4 style="text-align:center">related tags:</h4>
+            , .{});
+
             var temp_counters = try std.ArrayList(TagCounter.Entry).initCapacity(ctx.allocator, counters.count());
             defer temp_counters.deinit();
 
@@ -1005,11 +1009,22 @@ fn generateTagPages(ctx: *const Context) !void {
                 }
             }.inner);
 
+            var emitted_tags: usize = 0;
             for (temp_counters.items) |counter| {
+                if (emitted_tags > 10) break;
+                emitted_tags += 1;
                 const inner_tag = counter.key_ptr.*;
 
                 try writer.print(
-                    \\ <a class="tag-reference" href="{s}">{s} {d}</a><p>
+                    \\ <p>
+                    \\  <div class="tag-reference">
+                    \\   <a href="{s}">
+                    \\    <div class="tag-reference-text">{s}
+                    \\     <b class="tag-reference-number">{d}</b>
+                    \\    </div>
+                    \\   </a>
+                    \\  </div>
+                    \\ </p>
                 , .{
                     ctx.webPath("/_/tags/{s}.html", .{inner_tag}),
                     util.unsafeHTML(inner_tag),
@@ -1019,7 +1034,7 @@ fn generateTagPages(ctx: *const Context) !void {
         }
 
         try writer.print(
-            \\ <h3 style="text-align:center"><a href="{s}">Go to tag index</a></h3>
+            \\ <h4 style="text-align:center"><a href="{s}">Go to tag index</a></h4>
         , .{
             ctx.webPath("/_/tag_index.html", .{}),
         });
