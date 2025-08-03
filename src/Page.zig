@@ -42,32 +42,56 @@ pub const PageAttributes = struct {
         const month_int = try std.fmt.parseInt(u4, it.next().?, 10);
         const month = try std.meta.intToEnum(std.time.epoch.Month, month_int);
         const day = try std.fmt.parseInt(u5, it.next().?, 10);
-
-        logger.warn("{d} - {} - {d}", .{ year, month, day });
         const ymd = chrono.date.YearMonthDay.fromNumbers(year, month.numeric(), day);
-        logger.debug("ymd {}", .{ymd});
-
         return ymd.toDaysSinceUnixEpoch() * std.time.s_per_day;
+    }
+
+    fn parseTimestamp(timestamp: []const u8) !i64 {
+        // iso8601 lol
+        var parts_it = std.mem.splitSequence(u8, timestamp, "T");
+
+        // example `%at=2025-08-01T19:09:44.158Z`
+        const date_part = parts_it.next() orelse return error.InvalidTimestamp;
+
+        // then parse date
+        return parseDate(date_part);
     }
 
     pub fn fromFile(file: std.fs.File) !@This() {
         const stat = try file.stat();
         var self = @This(){
+            // the problem with relying purely on ctime is that editors may just
+            // delete the file then recreate it, instead of editing a file in place
+            // (maybe to prevent corruption, idk, i dont care).
+            //
+            // so always prefer to NOT rely on ctime from fs, instead use timestamps inside the file
             .ctime = @as(i64, @intCast(@divTrunc(stat.ctime, std.time.ns_per_s))),
         };
-        var first_bytes_buffer: [256]u8 = undefined;
+        var first_bytes_buffer: [512]u8 = undefined;
 
         const bytes_read = try file.reader().read(&first_bytes_buffer);
         const first_bytes = first_bytes_buffer[0..bytes_read];
 
-        logger.debug("first '{s}'", .{first_bytes});
+        // obsidian has the +++-form, but i also have the %at= form myself (for obsidian-maid, my plugin)
+        // first attempt to do %at= because mine is more epic
+
+        const AT_MARKER = "%at=";
+        const maybe_at_sign_index = std.mem.indexOf(u8, first_bytes, AT_MARKER);
+        if (maybe_at_sign_index) |at_sign_index| {
+            const end_at_sign = std.mem.indexOfAnyPos(u8, first_bytes, at_sign_index + 1, " \n") orelse return error.InvalidAtSign;
+            const timestamp_text = first_bytes[at_sign_index + AT_MARKER.len .. end_at_sign];
+            self.ctime = try parseTimestamp(timestamp_text);
+            return self;
+        }
+
+        // then try to do obsidian's
         const first_plus_sign_idx = std.mem.indexOf(u8, first_bytes, "+++") orelse return self;
         const last_plus_sign_idx = std.mem.indexOfPos(u8, first_bytes, first_plus_sign_idx + 1, "+++") orelse return self;
 
         logger.debug("idx {d} {d}", .{ first_plus_sign_idx, last_plus_sign_idx });
         const attributes_text = first_bytes[first_plus_sign_idx + 3 .. last_plus_sign_idx];
         var lines = std.mem.splitSequence(u8, attributes_text, "\n");
-        logger.debug("text '{s}'", .{attributes_text});
+        logger.debug("attrs text found: '{s}'", .{attributes_text});
         while (lines.next()) |line| {
             if (line.len == 0) continue;
             var key_value_iterator = std.mem.splitSequence(u8, line, "=");
