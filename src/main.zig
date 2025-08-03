@@ -915,13 +915,23 @@ fn generateIndexPage(ctx: *const Context) !void {
 const PageList = std.ArrayList(*const Page);
 
 const TagMap = std.StringHashMap(PageList);
+
+// for each tag, count the other tags that are also mentioned (increase exploration)
+const TagCounter = std.StringHashMap(usize);
+const TagCounters = std.StringHashMap(TagCounter);
+
 fn generateTagPages(ctx: *const Context) !void {
     var tag_map = TagMap.init(ctx.allocator);
+    var tag_counters = TagCounters.init(ctx.allocator);
 
     defer {
         var tags_it = tag_map.iterator();
         while (tags_it.next()) |entry| entry.value_ptr.deinit();
         tag_map.deinit();
+
+        var counters_it = tag_counters.iterator();
+        while (counters_it.next()) |entry| entry.value_ptr.deinit();
+        tag_counters.deinit();
     }
 
     var it = ctx.pages.iterator();
@@ -936,6 +946,21 @@ fn generateTagPages(ctx: *const Context) !void {
                 maybe_pagelist.value_ptr.* = PageList.init(ctx.allocator);
             }
             try maybe_pagelist.value_ptr.append(entry.value_ptr);
+
+            var maybe_counters = try tag_counters.getOrPut(tag);
+            if (!maybe_counters.found_existing) {
+                maybe_counters.value_ptr.* = TagCounter.init(ctx.allocator);
+            }
+
+            for (tags.items) |page_tag| {
+                if (!std.mem.eql(u8, page_tag, tag)) {
+                    const maybe_counter = try maybe_counters.value_ptr.getOrPut(page_tag);
+                    if (!maybe_counter.found_existing) {
+                        maybe_counter.value_ptr.* = 0;
+                    }
+                    maybe_counter.value_ptr.* += 1;
+                }
+            }
         };
     }
 
@@ -961,6 +986,37 @@ fn generateTagPages(ctx: *const Context) !void {
         var writer = output_file.writer();
 
         try writeHead(writer, ctx, tag_name, null);
+
+        const maybe_counters = tag_counters.get(tag_name);
+        if (maybe_counters) |counters| {
+            var temp_counters = try std.ArrayList(TagCounter.Entry).initCapacity(ctx.allocator, counters.count());
+            defer temp_counters.deinit();
+
+            var counters_it = counters.iterator();
+            // convert from map to arraylist, sort, then iterate on arraylist
+            while (counters_it.next()) |counter| {
+                temp_counters.appendAssumeCapacity(counter);
+            }
+
+            std.sort.insertion(TagCounter.Entry, temp_counters.items, {}, struct {
+                fn inner(context: void, a: TagCounter.Entry, b: TagCounter.Entry) bool {
+                    _ = context;
+                    return a.value_ptr.* > b.value_ptr.*;
+                }
+            }.inner);
+
+            for (temp_counters.items) |counter| {
+                const inner_tag = counter.key_ptr.*;
+
+                try writer.print(
+                    \\ <a class="tag-reference" href="{s}">{s} {d}</a><p>
+                , .{
+                    ctx.webPath("/_/tags/{s}.html", .{inner_tag}),
+                    util.unsafeHTML(inner_tag),
+                    counter.value_ptr.*,
+                });
+            }
+        }
 
         try writer.print(
             \\ <h3 style="text-align:center"><a href="{s}">Go to tag index</a></h3>
