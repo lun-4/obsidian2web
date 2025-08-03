@@ -9,12 +9,12 @@
             .hash = "chrono-0.0.0-XcKmnqXLAwDJknlvxSX70NUFl1RJrhsqMUjZ1p1W3d-D",
         },
         .koino = .{
-            .url = "git+https://github.com/lun-4/koino?ref=zig-014#dd285c54515156cabe9752502a55248987ca69df",
-            .hash = "koino-0.1.0-S9LuWm2KAgAxXmxzqAK8g9xT-ulZOmvin_70B-QWOm6s",
+            .url = "git+https://github.com/lun-4/koino?ref=zig-014#8c53e980eaa065119f6d5bc10b961565ba600ef1",
+            .hash = "koino-0.1.0-S9LuWlCKAgA4O7pCXWTQA2hGL-iSHjdFK-SMx_D7I_lZ",
         },
         .libpcre_zig = .{
-            .url = "git+https://github.com/kivikakk/libpcre.zig#00b62bc8bea7da75ba61f56555ea6cbaf0dc4e26",
-            .hash = "libpcre_zig-0.1.0-Dtf6Cb04AACKHZO38w4gDrY6to4lWHxOmW6htSqrR-f9",
+            .url = "git+https://github.com/kivikakk/libpcre.zig#04224f0bed09888d043c6fe4352458dbd907c815",
+            .hash = "libpcre_zig-0.1.0-Dtf6CQg4AACWtDDhtI-rjGGLKdBowMQiQrK1O5sx5icv",
         },
         .zig_uuid = .{
             .url = "git+https://github.com/lun-4/zig-uuid#78122167bbefeccb89afcb75fdd85400773aa58b",

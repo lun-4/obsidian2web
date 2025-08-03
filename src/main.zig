@@ -970,13 +970,13 @@ fn generateTagPages(ctx: *const Context) !void {
 
         _ = try writer.write(
             \\  </nav>
-            \\  <main class="text">
+            \\  <main class="tag-text">
         );
 
         std.sort.insertion(*const Page, entry.value_ptr.items, {}, struct {
             fn inner(context: void, a: *const Page, b: *const Page) bool {
                 _ = context;
-                return a.attributes.ctime < b.attributes.ctime;
+                return a.attributes.ctime > b.attributes.ctime;
             }
         }.inner);
 
@@ -989,8 +989,18 @@ fn generateTagPages(ctx: *const Context) !void {
             const page_preview_text = try page.fetchPreview(&preview_buffer);
             const page_web_path = try page.fetchWebPath(ctx.allocator);
             defer ctx.allocator.free(page_web_path);
+
+            const maybe_bg_image =
+                if (page.maybe_first_image) |image_url|
+                    try std.fmt.allocPrint(ctx.allocator, "--bg-image: url('{s}');", .{
+                        image_url,
+                    })
+                else
+                    try ctx.allocator.dupe(u8, "");
+            defer ctx.allocator.free(maybe_bg_image);
+
             try writer.print(
-                \\ <div class="page-preview">
+                \\ <div class="page-preview" style="{s}">
                 \\  <a href="{s}">
                 \\   <div class="page-preview-title"><h2>{s}</h2></div>
                 \\   <div class="page-preview-text">{s}&hellip;</div>
@@ -998,6 +1008,7 @@ fn generateTagPages(ctx: *const Context) !void {
                 \\ </div><p>
             ,
                 .{
+                    maybe_bg_image,
                     ctx.webPath("/{s}", .{page_web_path}),
                     util.unsafeHTML(page.title),
                     util.unsafeHTML(page_preview_text),
@@ -1110,8 +1121,8 @@ fn writeHead(writer: anytype, ctx: *const Context, title: []const u8, maybe_page
                 \\ <meta property="og:image" content="{s}" />
                 \\ <meta property="og:image:url" content="{s}" />
             , .{
-                ctx.webPath("/assets/{s}", .{image_url}),
-                ctx.webPath("/assets/{s}", .{image_url}),
+                image_url,
+                image_url,
             });
         }
 
@@ -1140,7 +1151,7 @@ fn writeHead(writer: anytype, ctx: *const Context, title: []const u8, maybe_page
         \\    <link rel="stylesheet" href="{s}/pygments.css">
         \\  </head>
         \\  <body>
-        \\  <nav class="toc">
+        \\  <nav class="tag-toc">
     , .{
         build_file.config.webroot,
         build_file.config.webroot,

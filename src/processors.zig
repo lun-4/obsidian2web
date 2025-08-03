@@ -678,7 +678,12 @@ pub const SetFirstImageProcessor = struct {
                     return error.InvalidLinksFound;
                 }
                 const asset = maybe_asset.?;
-                pctx.page.maybe_first_image = try pctx.ctx.allocator.dupe(u8, asset.relativePath());
+                pctx.page.maybe_first_image = try std.fmt.allocPrint(
+                    pctx.ctx.allocator,
+                    "{s}",
+                    .{pctx.ctx.webPath("/assets/{s}", .{asset.relativePath()})},
+                );
+                // pctx.page.maybe_first_image = try pctx.ctx.allocator.dupe(u8, asset.relativePath());
             } else {
                 // file from url
                 const url_capture = captures[2].?;
