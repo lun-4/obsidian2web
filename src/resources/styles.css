@@ -155,9 +155,13 @@ nav li:has(a[aria-current="page"]) {
   border-style: solid;
   border-width: 4px;
   border-color: #888888;
-  width: 25rem;
-  flex: 0 0 25rem;
+  width: 60rem;
+  flex: 0 0 60rem;
   padding: 2rem;
+  background-image: linear-gradient(45deg, var(--background-primary) 0%, var(--background-primary) 70%, transparent 90%), var(--bg-image);
+  background-size: 100% 100%, contain;
+  background-position: 0 0, right center;
+  background-repeat: no-repeat;
 }
 
 .page-preview-text {
@@ -202,6 +206,19 @@ nav li:has(a[aria-current="page"]) {
   .text {
     margin: 0 auto 2rem 1%;
     max-width: 50rem;
+  }
+  .tag-toc {
+    position: sticky;
+    top: 2rem;
+    max-width: 24rem;
+
+    /* allow the toc to scroll if it gets taller than the viewport */
+    /* overflow-y: auto; */
+    max-height: calc(100vh - 2rem);
+    padding-right: 2rem;
+  }
+  .tag-text {
+    margin: 0 auto 2rem 1%;
   }
   footer {
     /* these two are what make the footer actually stick to the bottom */
@@ -719,4 +736,19 @@ button:hover {
 
 .pygments .w {
   tab-size: 4;
+}
+
+.tag-reference {
+  text-align: center;
+  border: 1px solid var(--color-ui-1, #6688);
+  border-radius: 0.75em;
+}
+
+.tag-reference-text {
+  color: white;
+  font-size: 0.85rem;
+}
+
+.tag-reference-number {
+  color: gray;
 }
