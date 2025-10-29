@@ -917,7 +917,7 @@ pub const RecentPagesProcessor = struct {
             .{
                 year_day.year,
                 month_day.month.numeric(),
-                month_day.day_index,
+                month_day.day_index + 1,
                 day_seconds.getHoursIntoDay(),
                 day_seconds.getMinutesIntoHour(),
                 day_seconds.getSecondsIntoMinute(),
