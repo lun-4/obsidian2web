@@ -1042,14 +1042,14 @@ pub const FootnoteProcessor = struct {
             std.debug.print("FT definition\n", .{});
 
             try pctx.out.print(
-                "<a id=\"ft-{d}\" href=\"#fb-{d}\">[^{d}]</a>",
+                "<sup><a id=\"ft-{d}\" href=\"#fb-{d}\">[^{d}]</a></sup>",
                 .{ ft_number, ft_number, ft_number },
             );
         } else {
             // this is a footnote reference in the future
             std.debug.print("FT use\n", .{});
             try pctx.out.print(
-                "<a id=\"fb-{d}\" href=\"#ft-{d}\">[^{d}]</a>",
+                "<sup><a id=\"fb-{d}\" href=\"#ft-{d}\">[^{d}]</a></sup>",
                 .{ ft_number, ft_number, ft_number },
             );
         }
