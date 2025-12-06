@@ -993,3 +993,64 @@ test "at-date processor" {
 
     try testing.runTestWithDataset(TEST_DATA);
 }
+
+pub const FootnoteProcessor = struct {
+    regex: libpcre.Regex,
+
+    const REGEX = "\\[\\^(\\d+)\\]";
+    const Self = @This();
+
+    pub fn init() !Self {
+        return Self{
+            .regex = try libpcre.Regex.compile(REGEX, DefaultRegexOptions),
+        };
+    }
+
+    pub fn deinit(self: Self) void {
+        self.regex.deinit();
+    }
+
+    pub fn handle(
+        self: Self,
+        /// Processor context. `pctx.ctx` gives Context
+        pctx: anytype,
+        file_contents: []const u8,
+        captures: []?libpcre.Capture,
+    ) !void {
+        _ = self;
+        const match = captures[0].?;
+        // debugging
+        for (captures, 0..) |maybe_cap, idx| {
+            const cap = maybe_cap orelse {
+                std.debug.print("cap skip\n", .{});
+                continue;
+            };
+            const text = file_contents[cap.start..cap.end];
+            std.debug.print("FT cap {} idx {d} value {s}\n", .{ cap, idx, text });
+        }
+        const maybe_newline = file_contents[match.start - 1];
+        //const original_match = file_contents[match.start..match.end];
+
+        const ft_number_match = captures[1] orelse @panic("invalid match, should get number but regex failed?");
+        const ft_number_text = file_contents[ft_number_match.start..ft_number_match.end];
+        const ft_number = try std.fmt.parseInt(usize, ft_number_text, 10);
+
+        if (maybe_newline == '\n') {
+            // this is a footnote definition, it should receive an id
+            // TODO maybe link back? forwards get fb-<num>, while backwards get ft-<num>
+            std.debug.print("FT definition\n", .{});
+
+            try pctx.out.print(
+                "<a id=\"ft-{d}\" href=\"#fb-{d}\">[^{d}]</a>",
+                .{ ft_number, ft_number, ft_number },
+            );
+        } else {
+            // this is a footnote reference in the future
+            std.debug.print("FT use\n", .{});
+            try pctx.out.print(
+                "<a id=\"fb-{d}\" href=\"#ft-{d}\">[^{d}]</a>",
+                .{ ft_number, ft_number, ft_number },
+            );
+        }
+    }
+};

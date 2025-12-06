@@ -425,6 +425,7 @@ pub const PreProcessors = struct {
     set_first_image: processors.SetFirstImageProcessor,
     twitter: processors.StaticTwitterEmbed,
     at_dates: processors.AtDatesProcessor,
+    footnotes: processors.FootnoteProcessor,
 };
 
 pub fn initProcessors(comptime ProcessorHolderT: type) !ProcessorHolderT {
