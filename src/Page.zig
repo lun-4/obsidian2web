@@ -15,6 +15,7 @@ attributes: PageAttributes,
 tags: ?OwnedStringList = null,
 titles: ?OwnedStringList = null,
 state: State = .{ .unbuilt = {} },
+has_footnotes: bool = false,
 
 maybe_first_image: ?[]const u8 = null,
 

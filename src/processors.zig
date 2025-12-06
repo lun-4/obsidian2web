@@ -1035,6 +1035,7 @@ pub const FootnoteProcessor = struct {
         const ft_number_text = file_contents[ft_number_match.start..ft_number_match.end];
         const ft_number = try std.fmt.parseInt(usize, ft_number_text, 10);
 
+        pctx.page.has_footnotes = true;
         if (maybe_newline == '\n') {
             // this is a footnote definition, it should receive an id
             // TODO maybe link back? forwards get fb-<num>, while backwards get ft-<num>

@@ -671,10 +671,13 @@ pub fn mainPass(ctx: *Context, page: *Page) !void {
             });
         };
 
+        // hacky way to only inject padding when footnote feature is used
+        const maybe_footer_style = if (page.has_footnotes) "style=\"padding-bottom: 100vh;\"" else "";
+
         try output.print(
             \\  </nav>
-            \\  <main class="text">
-        , .{});
+            \\  <main class="text" {s}>
+        , .{maybe_footer_style});
         switch (page.page_type) {
             .asset => unreachable,
             .md => {
