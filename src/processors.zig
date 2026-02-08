@@ -1038,7 +1038,6 @@ pub const FootnoteProcessor = struct {
         pctx.page.has_footnotes = true;
         if (maybe_newline == '\n') {
             // this is a footnote definition, it should receive an id
-            // TODO maybe link back? forwards get fb-<num>, while backwards get ft-<num>
             std.debug.print("FT definition\n", .{});
 
             try pctx.out.print(
