@@ -652,10 +652,11 @@ pub fn mainPass(ctx: *Context, page: *Page) !void {
         , .{});
         if (page.titles) |titles| for (titles.items) |title| {
             try output.print(
-                \\  <a class="heading" href="#{s}">{s}</a></p>
+                \\  <a class="heading heading-{d}" href="#{s}">{s}</a></p>
             , .{
-                util.WebTitlePrinter{ .title = title },
-                title,
+                title.level,
+                util.WebTitlePrinter{ .title = title.text },
+                title.text,
             });
         };
 

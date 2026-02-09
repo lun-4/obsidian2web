@@ -182,6 +182,12 @@ nav li:has(a[aria-current="page"]) {
   font-weight: bold;
 }
 
+.heading-2 { padding-left: 1em; }
+.heading-3 { padding-left: 2em; }
+.heading-4 { padding-left: 3em; }
+.heading-5 { padding-left: 4em; }
+.heading-6 { padding-left: 5em; }
+
 @media (min-width: 80rem) {
   body {
     display: flex;

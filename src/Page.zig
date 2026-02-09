@@ -13,13 +13,20 @@ title: []const u8,
 attributes: PageAttributes,
 
 tags: ?OwnedStringList = null,
-titles: ?OwnedStringList = null,
+titles: ?TitleList = null,
 state: State = .{ .unbuilt = {} },
 has_footnotes: bool = false,
 
 maybe_first_image: ?[]const u8 = null,
 
 const Self = @This();
+
+pub const Title = struct {
+    text: []const u8,
+    level: usize,
+};
+
+pub const TitleList = std.ArrayList(Title);
 
 pub const State = union(enum) {
     unbuilt: void,
@@ -235,7 +242,7 @@ pub fn deinit(self: Self) void {
         tags.deinit();
     }
     if (self.titles) |titles| {
-        for (titles.items) |title| self.ctx.allocator.free(title);
+        for (titles.items) |title| self.ctx.allocator.free(title.text);
         titles.deinit();
     }
     if (self.maybe_first_image) |image| self.ctx.allocator.free(image);

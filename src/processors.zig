@@ -454,11 +454,11 @@ pub const TableOfContentsProcessor = struct {
         const level = hashtag_length;
 
         var titles = if (pctx.page.titles) |*titles| titles else blk: {
-            pctx.page.titles = root.OwnedStringList.init(ctx.allocator);
+            pctx.page.titles = Page.TitleList.init(ctx.allocator);
             break :blk &pctx.page.titles.?;
         };
 
-        try titles.append(try ctx.allocator.dupe(u8, title));
+        try titles.append(.{ .text = try ctx.allocator.dupe(u8, title), .level = level });
         logger.debug("anchor found: {s}", .{title});
         try pctx.out.print(
             // a newline is added after the anchor due to a possible bug in koino
@@ -490,7 +490,7 @@ test "table of contents processor" {
         try std.testing.expectEqualSlices(
             u8,
             expected_title_entry,
-            page.titles.?.items[0],
+            page.titles.?.items[0].text,
         );
     }
 }
