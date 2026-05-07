@@ -13,14 +13,7 @@ pub const UnsafeHTMLPrinter = struct {
 
     const Self = @This();
 
-    pub fn format(
-        value: Self,
-        comptime fmt: []const u8,
-        options: std.fmt.FormatOptions,
-        writer: anytype,
-    ) !void {
-        _ = options;
-        _ = fmt;
+    pub fn format(value: Self, writer: *std.Io.Writer) std.Io.Writer.Error!void {
         try encodeForHTML(writer, value.data);
     }
 };
@@ -94,18 +87,9 @@ pub fn WebPathPrinter(comptime ArgsT: anytype, comptime fmt: []const u8) type {
 
         const Self = @This();
 
-        pub fn format(
-            self: Self,
-            comptime outerFmt: []const u8,
-            options: std.fmt.FormatOptions,
-            writer: anytype,
-        ) !void {
-            _ = outerFmt;
-            _ = options;
-            try std.fmt.format(writer, "{s}", .{
-                self.ctx.build_file.config.webroot,
-            });
-            try std.fmt.format(writer, fmt, self.args);
+        pub fn format(self: Self, writer: *std.Io.Writer) std.Io.Writer.Error!void {
+            try writer.print("{s}", .{self.ctx.build_file.config.webroot});
+            try writer.print(fmt, self.args);
         }
     };
 }
@@ -192,16 +176,9 @@ pub const WebTitlePrinter = struct {
 
     const Self = @This();
 
-    pub fn format(
-        self: Self,
-        comptime fmt: []const u8,
-        options: std.fmt.FormatOptions,
-        writer: anytype,
-    ) !void {
-        _ = options;
-        _ = fmt;
+    pub fn format(self: Self, writer: *std.Io.Writer) std.Io.Writer.Error!void {
         for (self.title) |character| {
-            _ = try writer.writeByte(switch (character) {
+            try writer.writeByte(switch (character) {
                 ' ' => '-',
                 else => std.ascii.toLower(character),
             });

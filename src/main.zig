@@ -2,7 +2,7 @@ const std = @import("std");
 const koino = @import("koino");
 const libpcre = @import("libpcre");
 
-pub const OwnedStringList = std.ArrayList([]const u8);
+pub const OwnedStringList = std.array_list.Managed([]const u8);
 pub const BuildFile = @import("build_file.zig").BuildFile;
 const processors = @import("processors.zig");
 const util = @import("util.zig");
@@ -21,8 +21,8 @@ const PageMap = std.StringHashMap(Page);
 const TitleMap = std.StringHashMap([]const u8);
 
 const PathTree = @import("PathTree.zig");
-pub const StringBuffer = std.ArrayList(u8);
-pub const SliceList = std.ArrayList([]const u8);
+pub const StringBuffer = std.array_list.Managed(u8);
+pub const SliceList = std.array_list.Managed([]const u8);
 
 const TreeGeneratorContext = struct {
     current_folder: ?PathTree.PageFolder = null,
@@ -41,7 +41,7 @@ fn printHashMap(map: anytype) void {
 }
 
 fn writePageTree(
-    writer: anytype,
+    writer: *std.Io.Writer,
     ctx: *const Context,
     tree_context: TreeGeneratorContext,
     /// Set this if generating a tree in a specific page.
@@ -85,7 +85,7 @@ fn writePageTree(
 
         const child_folder = current_folder.getPtr(folder_name).?.dir;
         try writer.print(
-            "<summary>{s}</summary>\n",
+            "<summary>{f}</summary>\n",
             .{util.unsafeHTML(folder_name)},
         );
 
@@ -118,7 +118,7 @@ fn writePageTree(
             " ";
 
         try writer.print(
-            "<li><a class=\"toc-link\" {s}href=\"{s}\">{s}</a></li>\n",
+            "<li><a class=\"toc-link\" {s}href=\"{f}\">{f}</a></li>\n",
             .{
                 current_attr,
                 ctx.webPath("/{s}", .{page_web_path}),
@@ -225,18 +225,16 @@ pub const Context = struct {
             std.mem.endsWith(u8, path, ".md") or std.mem.endsWith(u8, path, ".canvas");
 
         if (must_render) {
-            const pages_result = try self.pages.getOrPut(owned_fspath);
-            if (!pages_result.found_existing) {
+            if (!self.pages.contains(owned_fspath)) {
                 const page = try Page.fromPath(self, owned_fspath);
-                pages_result.value_ptr.* = page;
+                try self.pages.put(owned_fspath, page);
                 try self.tree.addPath(page.filesystem_path);
             }
         } else {
             // don't render, instead create as an Asset (a variant of Page)
-            const assets_result = try self.assets.getOrPut(owned_fspath);
-            if (!assets_result.found_existing) {
+            if (!self.assets.contains(owned_fspath)) {
                 const asset = try Page.fromAssetPath(self, owned_fspath);
-                assets_result.value_ptr.* = asset;
+                try self.assets.put(owned_fspath, asset);
             }
         }
     }
@@ -258,7 +256,7 @@ pub const Context = struct {
     }
 };
 
-pub const ByteList = std.ArrayList(u8);
+pub const ByteList = std.array_list.Managed(u8);
 
 // insert into PageTree from the given include paths
 pub fn iterateVaultPath(ctx: *Context) !void {
@@ -464,7 +462,7 @@ pub fn runProcessors(
     page: *Page,
     options: RunProcessorOptions,
 ) !void {
-    logger.info("running processors processing {} {}", .{ page, options });
+    logger.info("running processors processing {f} {any}", .{ page, options });
 
     if (page.page_type == .canvas) {
         // skip processors for canvas, as they're made for HTML can break the json
@@ -490,12 +488,12 @@ pub fn runProcessors(
     } else blk: {
         if (options.end) {
             if (page.state != .post) {
-                logger.err("expected page to be on post state, got {}", .{page.state});
+                logger.err("expected page to be on post state, got {any}", .{page.state});
                 return error.UnexpectedPageState;
             }
         } else {
             if (page.state != .main) {
-                logger.err("expected page to be on main state, got {}", .{page.state});
+                logger.err("expected page to be on main state, got {any}", .{page.state});
                 return error.UnexpectedPageState;
             }
         }
@@ -515,24 +513,17 @@ pub fn runProcessors(
         const processor = @field(processor_list, field.name);
         logger.debug("running {s}", .{@typeName(field.type)});
 
-        const output_file_contents = blk: {
-            var output_fd = try std.fs.cwd().openFile(
-                temp_output_path,
-                .{ .mode = .read_only },
-            );
-            defer output_fd.close();
-
-            break :blk try output_fd.reader().readAllAlloc(
-                ctx.allocator,
-                std.math.maxInt(usize),
-            );
-        };
+        const output_file_contents = try std.fs.cwd().readFileAlloc(
+            ctx.allocator,
+            temp_output_path,
+            std.math.maxInt(usize),
+        );
         defer ctx.allocator.free(output_file_contents);
 
-        var result = ByteList.init(ctx.allocator);
+        var result: std.Io.Writer.Allocating = .init(ctx.allocator);
         defer result.deinit();
 
-        const HolderT = Holder(@TypeOf(processor), ByteList.Writer);
+        const HolderT = Holder(@TypeOf(processor), *std.Io.Writer);
 
         var last_capture: ?libpcre.Capture = null;
         var context_holder = HolderT{
@@ -540,7 +531,7 @@ pub fn runProcessors(
             .processor = processor,
             .page = page,
             .last_capture = &last_capture,
-            .out = result.writer(),
+            .out = &result.writer,
         };
 
         try util.captureWithCallback(
@@ -557,12 +548,12 @@ pub fn runProcessors(
                     capture: []?libpcre.Capture,
                 ) anyerror!void {
                     const first_group = capture[0].?;
-                    _ = if (holder.last_capture.* == null)
-                        try holder.out.write(
+                    if (holder.last_capture.* == null)
+                        try holder.out.writeAll(
                             full_string[0..first_group.start],
                         )
                     else
-                        try holder.out.write(
+                        try holder.out.writeAll(
                             full_string[holder.last_capture.*.?.end..first_group.start],
                         );
 
@@ -576,10 +567,10 @@ pub fn runProcessors(
             }.inner,
         );
 
-        _ = if (last_capture == null)
-            try result.writer().write(output_file_contents)
+        if (last_capture == null)
+            try result.writer.writeAll(output_file_contents)
         else
-            try result.writer().write(
+            try result.writer.writeAll(
                 output_file_contents[last_capture.?.end..output_file_contents.len],
             );
 
@@ -589,7 +580,7 @@ pub fn runProcessors(
                 .{ .mode = .write_only },
             );
             defer output_fd.close();
-            _ = try output_fd.write(result.items);
+            try output_fd.writeAll(result.written());
         }
     }
 }
@@ -600,18 +591,11 @@ pub fn mainPass(ctx: *Context, page: *Page) !void {
     // TODO find a way to feed chunks of file to koino
     //
     // i did that before and failed miserably...
-    const input_page_contents = blk: {
-        var page_fd = try std.fs.cwd().openFile(
-            page.state.pre,
-            .{ .mode = .read_only },
-        );
-        defer page_fd.close();
-
-        break :blk try page_fd.reader().readAllAlloc(
-            ctx.allocator,
-            std.math.maxInt(usize),
-        );
-    };
+    const input_page_contents = try std.fs.cwd().readFileAlloc(
+        ctx.allocator,
+        page.state.pre,
+        std.math.maxInt(usize),
+    );
     defer ctx.allocator.free(input_page_contents);
 
     const options = koino.Options{
@@ -640,7 +624,9 @@ pub fn mainPass(ctx: *Context, page: *Page) !void {
 
     defer page.state = .{ .main = {} };
 
-    var output = output_fd.writer();
+    var output_buf: [4096]u8 = undefined;
+    var output_fw = output_fd.writer(&output_buf);
+    const output: *std.Io.Writer = &output_fw.interface;
 
     // write time
     {
@@ -652,7 +638,7 @@ pub fn mainPass(ctx: *Context, page: *Page) !void {
         , .{});
         if (page.titles) |titles| for (titles.items) |title| {
             try output.print(
-                \\  <a class="heading heading-{d}" href="#{s}">{s}</a></p>
+                \\  <a class="heading heading-{d}" href="#{f}">{s}</a></p>
             , .{
                 title.level,
                 util.WebTitlePrinter{ .title = title.text },
@@ -665,7 +651,7 @@ pub fn mainPass(ctx: *Context, page: *Page) !void {
         , .{});
         if (page.tags) |tags| for (tags.items) |tag| {
             try output.print(
-                \\  <a class="tag" href="{}">#{s}</a></p>
+                \\  <a class="tag" href="{f}">#{s}</a></p>
             , .{
                 ctx.webPath("/_/tags/{s}.html", .{tag}),
                 tag,
@@ -683,7 +669,7 @@ pub fn mainPass(ctx: *Context, page: *Page) !void {
             .asset => unreachable,
             .md => {
                 try output.print(
-                    \\    <h2>{s}</h2><p>
+                    \\    <h2>{f}</h2><p>
                 , .{util.unsafeHTML(page.title)});
 
                 var parser = try koino.parser.Parser.init(ctx.allocator, options);
@@ -875,6 +861,8 @@ pub fn mainPass(ctx: *Context, page: *Page) !void {
             \\ </html>
         , .{if (ctx.build_file.config.project_footer) FOOTER else ""});
     }
+
+    try output.flush();
 }
 
 fn generateIndexPage(ctx: *const Context) !void {
@@ -909,15 +897,18 @@ fn generateIndexPage(ctx: *const Context) !void {
         );
         defer index_out_fd.close();
 
-        const writer = index_out_fd.writer();
+        var index_buf: [4096]u8 = undefined;
+        var index_fw = index_out_fd.writer(&index_buf);
+        const writer: *std.Io.Writer = &index_fw.interface;
 
         try writeHead(writer, ctx, "Index Page", null);
         try writePageTree(writer, ctx, .{}, null);
         try writeEmptyPage(writer, ctx.build_file);
+        try writer.flush();
     }
 }
 
-const PageList = std.ArrayList(*const Page);
+const PageList = std.array_list.Managed(*const Page);
 
 const TagMap = std.StringHashMap(PageList);
 
@@ -942,7 +933,7 @@ fn generateTagPages(ctx: *const Context) !void {
     var it = ctx.pages.iterator();
     while (it.next()) |entry| {
         const page = entry.value_ptr;
-        logger.debug("processing tags in {}", .{page});
+        logger.debug("processing tags in {f}", .{page});
 
         if (page.tags) |tags| for (tags.items) |tag| {
             var maybe_pagelist = try tag_map.getOrPut(tag);
@@ -988,7 +979,9 @@ fn generateTagPages(ctx: *const Context) !void {
         );
         defer output_file.close();
 
-        var writer = output_file.writer();
+        var tag_buf: [4096]u8 = undefined;
+        var tag_fw = output_file.writer(&tag_buf);
+        const writer: *std.Io.Writer = &tag_fw.interface;
 
         try writeHead(writer, ctx, tag_name, null);
 
@@ -998,7 +991,7 @@ fn generateTagPages(ctx: *const Context) !void {
                 \\ <h4 style="text-align:center">related tags:</h4>
             , .{});
 
-            var temp_counters = try std.ArrayList(TagCounter.Entry).initCapacity(ctx.allocator, counters.count());
+            var temp_counters = try std.array_list.Managed(TagCounter.Entry).initCapacity(ctx.allocator, counters.count());
             defer temp_counters.deinit();
 
             var counters_it = counters.iterator();
@@ -1023,8 +1016,8 @@ fn generateTagPages(ctx: *const Context) !void {
                 try writer.print(
                     \\ <p>
                     \\  <div class="tag-reference">
-                    \\   <a href="{s}">
-                    \\    <div class="tag-reference-text">{s}
+                    \\   <a href="{f}">
+                    \\    <div class="tag-reference-text">{f}
                     \\     <b class="tag-reference-number">{d}</b>
                     \\    </div>
                     \\   </a>
@@ -1039,12 +1032,12 @@ fn generateTagPages(ctx: *const Context) !void {
         }
 
         try writer.print(
-            \\ <h4 style="text-align:center"><a href="{s}">Go to tag index</a></h4>
+            \\ <h4 style="text-align:center"><a href="{f}">Go to tag index</a></h4>
         , .{
             ctx.webPath("/_/tag_index.html", .{}),
         });
 
-        _ = try writer.write(
+        try writer.writeAll(
             \\  </nav>
             \\  <main class="tag-text">
         );
@@ -1056,7 +1049,7 @@ fn generateTagPages(ctx: *const Context) !void {
             }
         }.inner);
 
-        try writer.print("<h1>{s}</h1><p>", .{util.unsafeHTML(tag_name)});
+        try writer.print("<h1>{f}</h1><p>", .{util.unsafeHTML(tag_name)});
         try writer.print("({d} pages)", .{entry.value_ptr.items.len});
         try writer.print("<div class=\"tag-page\">", .{});
 
@@ -1077,9 +1070,9 @@ fn generateTagPages(ctx: *const Context) !void {
 
             try writer.print(
                 \\ <div class="page-preview" style="{s}">
-                \\  <a href="{s}">
-                \\   <div class="page-preview-title"><h2>{s}</h2></div>
-                \\   <div class="page-preview-text">{s}&hellip;</div>
+                \\  <a href="{f}">
+                \\   <div class="page-preview-title"><h2>{f}</h2></div>
+                \\   <div class="page-preview-text">{f}&hellip;</div>
                 \\  </a>
                 \\ </div><p>
             ,
@@ -1094,18 +1087,19 @@ fn generateTagPages(ctx: *const Context) !void {
 
         try writer.print("</div>", .{});
 
-        _ = try writer.write(
+        try writer.writeAll(
             \\  </main>
         );
 
         if (ctx.build_file.config.project_footer) {
-            _ = try writer.write(FOOTER);
+            try writer.writeAll(FOOTER);
         }
 
-        _ = try writer.write(
+        try writer.writeAll(
             \\  </body>
             \\</html>
         );
+        try writer.flush();
     }
 
     try generateTagIndex(ctx, tag_map);
@@ -1119,10 +1113,12 @@ fn generateTagIndex(ctx: *const Context, tag_map: TagMap) !void {
     );
     defer output_file.close();
 
-    var writer = output_file.writer();
+    var idx_buf: [4096]u8 = undefined;
+    var idx_fw = output_file.writer(&idx_buf);
+    const writer: *std.Io.Writer = &idx_fw.interface;
 
     try writeHead(writer, ctx, "Tag Index", null);
-    _ = try writer.write(
+    try writer.writeAll(
         \\  </nav>
         \\  <main class="text">
     );
@@ -1148,8 +1144,8 @@ fn generateTagIndex(ctx: *const Context, tag_map: TagMap) !void {
 
         const pages = tag_map.get(tag_name).?;
         try writer.print(
-            \\ <a href="{s}">
-            \\ <h4>{s}</h4>
+            \\ <a href="{f}">
+            \\ <h4>{f}</h4>
             \\ </a>
             \\ ({d} pages)
         , .{
@@ -1161,21 +1157,22 @@ fn generateTagIndex(ctx: *const Context, tag_map: TagMap) !void {
         try writer.print("</div>", .{});
     }
     try writer.print("</div>", .{});
-    _ = try writer.write(
+    try writer.writeAll(
         \\  </main>
     );
 
     if (ctx.build_file.config.project_footer) {
-        _ = try writer.write(FOOTER);
+        try writer.writeAll(FOOTER);
     }
 
-    _ = try writer.write(
+    try writer.writeAll(
         \\  </body>
         \\</html>
     );
+    try writer.flush();
 }
 
-fn writeHead(writer: anytype, ctx: *const Context, title: []const u8, maybe_page: ?Page) !void {
+fn writeHead(writer: *std.Io.Writer, ctx: *const Context, title: []const u8, maybe_page: ?Page) !void {
     const build_file = ctx.build_file;
     try writer.print(
         \\<!DOCTYPE html>
@@ -1183,8 +1180,8 @@ fn writeHead(writer: anytype, ctx: *const Context, title: []const u8, maybe_page
         \\  <head>
         \\    <meta charset="UTF-8">
         \\    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        \\    <title>{s}</title>
-        \\    <meta property="og:title" content="{s}" />
+        \\    <title>{f}</title>
+        \\    <meta property="og:title" content="{f}" />
         \\    <meta property="og:type" content="article" />
     , .{
         util.unsafeHTML(title),
@@ -1204,7 +1201,7 @@ fn writeHead(writer: anytype, ctx: *const Context, title: []const u8, maybe_page
 
         var buffer: [256]u8 = undefined;
         try writer.print(
-            \\ <meta property="og:description" content="{s}" />
+            \\ <meta property="og:description" content="{f}" />
         , .{util.unsafeHTML(try page.fetchPreview(&buffer))});
     }
     if (build_file.config.rss != null) {
@@ -1237,18 +1234,18 @@ fn writeHead(writer: anytype, ctx: *const Context, title: []const u8, maybe_page
 }
 
 // TODO make this usable on the main pipeline too?
-fn writeEmptyPage(writer: anytype, build_file: BuildFile) !void {
-    _ = try writer.write(
+fn writeEmptyPage(writer: *std.Io.Writer, build_file: BuildFile) !void {
+    try writer.writeAll(
         \\  </nav>
         \\  <main class="text">
         \\  </main>
     );
 
     if (build_file.config.project_footer) {
-        _ = try writer.write(FOOTER);
+        try writer.writeAll(FOOTER);
     }
 
-    _ = try writer.write(
+    try writer.writeAll(
         \\  </body>
         \\</html>
     );
@@ -1284,9 +1281,7 @@ fn createStaticResources(ctx: Context) !void {
                 .{ .truncate = true },
             );
             defer output_fd.close();
-            // write it all lmao
-            const written_bytes = try output_fd.write(resource_text);
-            std.debug.assert(written_bytes == resource_text.len);
+            try output_fd.writeAll(resource_text);
         }
     }
 }
@@ -1345,7 +1340,7 @@ fn rssGUID(allocator: std.mem.Allocator, title: []const u8) ![]const u8 {
     rng.random().bytes(&hash_as_uuid.bytes);
     return try std.fmt.allocPrint(
         allocator,
-        "{}",
+        "{f}",
         .{hash_as_uuid},
     );
 }
@@ -1358,7 +1353,9 @@ fn generateRSSFeed(ctx: Context, rss_root: []const u8) !void {
     );
     defer rss_file.close();
 
-    var writer = rss_file.writer();
+    var rss_buf: [4096]u8 = undefined;
+    var rss_fw = rss_file.writer(&rss_buf);
+    const writer: *std.Io.Writer = &rss_fw.interface;
 
     const rss_date = try toRFC822(ctx.allocator, std.time.timestamp());
     defer ctx.allocator.free(rss_date);
@@ -1413,16 +1410,17 @@ fn generateRSSFeed(ctx: Context, rss_root: []const u8) !void {
         const htmlpath = try page.fetchHtmlPath(ctx.allocator);
         defer ctx.allocator.free(htmlpath);
 
-        var page_fd = try std.fs.cwd().openFile(htmlpath, .{ .mode = .read_only });
-        defer page_fd.close();
-
-        const raw_page_html = try page_fd.reader().readAllAlloc(ctx.allocator, std.math.maxInt(usize));
+        const raw_page_html = try std.fs.cwd().readFileAlloc(
+            ctx.allocator,
+            htmlpath,
+            std.math.maxInt(usize),
+        );
         defer ctx.allocator.free(raw_page_html);
 
         try writer.print(
             \\ <item>
-            \\  <title>{s}</title>
-            \\  <description>{s}</description>
+            \\  <title>{f}</title>
+            \\  <description>{f}</description>
             \\  <content:encoded><![CDATA[
             \\     {s}
             \\ ]]></content:encoded>
@@ -1446,6 +1444,7 @@ fn generateRSSFeed(ctx: Context, rss_root: []const u8) !void {
         \\</channel>
         \\</rss>
     , .{});
+    try writer.flush();
 }
 
 test "basic test" {

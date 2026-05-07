@@ -22,17 +22,19 @@ pub fn build(b: *std.Build) void {
         .{ .name = "uuid", .mod = uuid_pkg.module("uuid") },
     };
 
-    const exe = b.addExecutable(.{
-        .name = "obsidian2web",
+    const exe_mod = b.createModule(.{
         .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
     });
+    for (mod_deps) |dep| exe_mod.addImport(dep.name, dep.mod);
 
-    for (mod_deps) |dep| {
-        exe.root_module.addImport(dep.name, dep.mod);
-    }
-
+    const exe = b.addExecutable(.{
+        .name = "obsidian2web",
+        .root_module = exe_mod,
+        // uucode (transitive dep via koino) triggers self-hosted backend bugs
+        .use_llvm = true,
+    });
     b.installArtifact(exe);
 
     // This *creates* a Run step in the build graph, to be executed when another
@@ -48,10 +50,7 @@ pub fn build(b: *std.Build) void {
 
     // This allows the user to pass arguments to the application in the build
     // command itself, like this: `zig build run -- arg1 arg2 etc`
-    if (b.args) |args| {
-        run_cmd.addArgs(args);
-    }
-
+    if (b.args) |args| run_cmd.addArgs(args);
     // This creates a build step. It will be visible in the `zig build --help` menu,
     // and can be selected like this: `zig build run`
     // This will evaluate the `run` step rather than the default, which is "install".
@@ -60,16 +59,7 @@ pub fn build(b: *std.Build) void {
 
     // Creates a step for unit testing. This only builds the test executable
     // but does not run it.
-    const unit_tests = b.addTest(.{
-        .root_source_file = b.path("src/main.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-
-    for (mod_deps) |dep| {
-        unit_tests.root_module.addImport(dep.name, dep.mod);
-    }
-
+    const unit_tests = b.addTest(.{ .root_module = exe_mod, .use_llvm = true });
     const run_unit_tests = b.addRunArtifact(unit_tests);
 
     // Similar to creating the run step earlier, this exposes a `test` step to

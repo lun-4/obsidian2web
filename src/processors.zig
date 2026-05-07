@@ -125,7 +125,7 @@ pub const CrossPageLinkProcessor = struct {
             switch (file_type) {
                 .image => {
                     try pctx.out.print(
-                        "<img src=\"{s}\"",
+                        "<img src=\"{f}\"",
                         .{
                             ctx.webPath("/assets/{s}", .{asset.relativePath()}),
                         },
@@ -140,7 +140,7 @@ pub const CrossPageLinkProcessor = struct {
                     );
                 },
                 .video => try pctx.out.print(
-                    "<video src=\"{s}\" controls>",
+                    "<video src=\"{f}\" controls>",
                     .{
                         ctx.webPath("/assets/{s}", .{asset.relativePath()}),
                     },
@@ -186,7 +186,7 @@ pub const CrossPageLinkProcessor = struct {
                 );
 
                 try pctx.out.print(
-                    "<a href=\"{}\">{s}</a>",
+                    "<a href=\"{f}\">{f}</a>",
                     .{
                         ctx.webPath("/{s}", .{web_path}),
                         util.unsafeHTML(reference),
@@ -195,7 +195,7 @@ pub const CrossPageLinkProcessor = struct {
             } else {
                 if (ctx.build_file.config.strict_links) {
                     logger.err(
-                        "file '{s}' has link to file '{s}' which is not included as a page!",
+                        "file '{f}' has link to file '{s}' which is not included as a page!",
                         .{ pctx.page, reference },
                     );
                     return error.InvalidLinksFound;
@@ -275,14 +275,18 @@ test "cross page link processor" {
         const page_title = test_entry.@"0";
         const expected_page_output = test_entry.@"2";
 
-        const page = test_ctx.ctx.pageFromTitle(page_title).?;
+        const page: *Page = blk: {
+            var it = test_ctx.ctx.pages.iterator();
+            while (it.next()) |entry| {
+                if (std.mem.eql(u8, entry.value_ptr.title, page_title)) break :blk entry.value_ptr;
+            }
+            return error.PageNotFoundByTitle;
+        };
 
         const htmlpath = try page.fetchHtmlPath(std.testing.allocator);
         defer std.testing.allocator.free(htmlpath);
 
-        var output_file = try std.fs.cwd().openFile(htmlpath, .{});
-        defer output_file.close();
-        const output_text = try output_file.reader().readAllAlloc(std.testing.allocator, 1024);
+        const output_text = try std.fs.cwd().readFileAlloc(std.testing.allocator, htmlpath, 1024);
         defer allocator.free(output_text);
 
         const maybe_found = std.mem.indexOf(u8, output_text, expected_page_output);
@@ -346,7 +350,7 @@ pub const TagProcessor = struct {
 
         logger.debug("found tag: text='{s}' name='{s}'", .{ tag_text, tag_name });
         try pctx.out.print(
-            "{s}<a href=\"{}\">{s}</a>",
+            "{s}<a href=\"{f}\">{s}</a>",
             .{
                 if (raw_text[0] == ' ') " " else "",
                 ctx.webPath("/_/tags/{s}.html", .{tag_name}),
@@ -464,7 +468,7 @@ pub const TableOfContentsProcessor = struct {
             // a newline is added after the anchor due to a possible bug in koino
             // where the data after the anchor doesn't get parsed as markdown but instead as raw html
             // (which doesn't work because [links](like these) are not really html tags, just text)
-            "<h{d} id=\"{s}\">{s} <a href=\"#{s}\">#</a></h{d}>\n",
+            "<h{d} id=\"{f}\">{s} <a href=\"#{f}\">#</a></h{d}>\n",
             .{ level, web_title_id, title, web_title_id, level },
         );
     }
@@ -631,7 +635,7 @@ pub const SetFirstImageProcessor = struct {
         _ = self;
         const full_match = captures[0].?;
         const full_data = file_contents[full_match.start..full_match.end];
-        _ = try pctx.out.write(full_data);
+        try pctx.out.writeAll(full_data);
 
         for (captures, 0..) |maybe_cap, idx| {
             const cap = maybe_cap orelse {
@@ -680,7 +684,7 @@ pub const SetFirstImageProcessor = struct {
                 const asset = maybe_asset.?;
                 pctx.page.maybe_first_image = try std.fmt.allocPrint(
                     pctx.ctx.allocator,
-                    "{s}",
+                    "{f}",
                     .{pctx.ctx.webPath("/assets/{s}", .{asset.relativePath()})},
                 );
                 // pctx.page.maybe_first_image = try pctx.ctx.allocator.dupe(u8, asset.relativePath());
@@ -724,7 +728,7 @@ pub const StaticTwitterEmbed = struct {
 
         if (ctx.build_file.config.static_twitter_folder == null) {
             logger.warn("twitter embed requested but no static_twitter_folder provided", .{});
-            _ = try pctx.out.write(file_contents[full_match.start..full_match.end]);
+            try pctx.out.writeAll(file_contents[full_match.start..full_match.end]);
             return;
         }
 
@@ -766,12 +770,11 @@ pub const StaticTwitterEmbed = struct {
                 try proc.spawn();
 
                 var new_file = try dir.createFile(pathname, .{});
-                var buf: [512]u8 = undefined;
+                var pr_buf: [512]u8 = undefined;
                 while (true) {
-                    const read_bytes = try proc.stdout.?.reader().read(&buf);
+                    const read_bytes = try proc.stdout.?.read(&pr_buf);
                     if (read_bytes == 0) break;
-                    const data = buf[0..read_bytes];
-                    try new_file.writeAll(data);
+                    try new_file.writeAll(pr_buf[0..read_bytes]);
                 }
                 const term = try proc.wait();
                 logger.info("term: {}", .{term});
@@ -792,8 +795,10 @@ pub const StaticTwitterEmbed = struct {
         };
         defer file.close();
 
-        const snscrape_jsonl = try file.reader().readUntilDelimiterAlloc(ctx.allocator, '\n', std.math.maxInt(usize));
-        defer ctx.allocator.free(snscrape_jsonl);
+        const all_jsonl = try file.readToEndAlloc(ctx.allocator, std.math.maxInt(usize));
+        defer ctx.allocator.free(all_jsonl);
+        const newline_idx = std.mem.indexOfScalar(u8, all_jsonl, '\n') orelse all_jsonl.len;
+        const snscrape_jsonl = all_jsonl[0..newline_idx];
 
         logger.debug("parsing '{s}'", .{snscrape_jsonl});
 
@@ -889,7 +894,7 @@ pub const RecentPagesProcessor = struct {
         _ = captures;
         const ctx = pctx.ctx;
 
-        const PageList = std.ArrayList(*const Page);
+        const PageList = std.array_list.Managed(*const Page);
 
         var pages = PageList.init(ctx.allocator);
         defer pages.deinit();
@@ -934,7 +939,7 @@ pub const RecentPagesProcessor = struct {
             const page_age_days = page_age / 86400;
 
             try pctx.out.print(
-                "<li><a href=\"{}\">{s}</a>, created {d} days ago</li>",
+                "<li><a href=\"{f}\">{f}</a>, created {d} days ago</li>",
                 .{
                     ctx.webPath("/{s}", .{web_path}),
                     util.unsafeHTML(page.title),
@@ -982,11 +987,11 @@ test "at-date processor" {
     std.testing.log_level = .debug;
     const TEST_DATA = .{
         .{
-            "%at=2023-03-29T00:40:34",
+            "%at=2023-03-29T00:40:34\n",
             "<at-date datetime=\"2023-03-29T00:40:34\">%at=2023-03-29T00:40:34</at-date>",
         },
         .{
-            "%at=2024-04-20T00:16:05.592Z",
+            "%at=2024-04-20T00:16:05.592Z\n",
             "<at-date datetime=\"2024-04-20T00:16:05.592Z\">%at=2024-04-20T00:16:05.592Z</at-date>",
         },
     };
