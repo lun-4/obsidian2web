@@ -26,7 +26,7 @@ pub const Title = struct {
     level: usize,
 };
 
-pub const TitleList = std.ArrayList(Title);
+pub const TitleList = std.array_list.Managed(Title);
 
 pub const State = union(enum) {
     unbuilt: void,
@@ -77,7 +77,7 @@ pub const PageAttributes = struct {
         };
         var first_bytes_buffer: [512]u8 = undefined;
 
-        const bytes_read = try file.reader().read(&first_bytes_buffer);
+        const bytes_read = try file.readAll(&first_bytes_buffer);
         const first_bytes = first_bytes_buffer[0..bytes_read];
 
         // obsidian has the +++-form, but i also have the %at= form myself (for obsidian-maid, my plugin)
@@ -248,14 +248,7 @@ pub fn deinit(self: Self) void {
     if (self.maybe_first_image) |image| self.ctx.allocator.free(image);
 }
 
-pub fn format(
-    self: Self,
-    comptime fmt: []const u8,
-    options: std.fmt.FormatOptions,
-    writer: anytype,
-) !void {
-    _ = fmt;
-    _ = options;
+pub fn format(self: Self, writer: *std.Io.Writer) std.Io.Writer.Error!void {
     return writer.print("Page<path='{s}'>", .{self.filesystem_path});
 }
 

@@ -84,9 +84,11 @@ pub fn runTestWithSingleEntry(
     const htmlpath = try page.fetchHtmlPath(std.testing.allocator);
     defer std.testing.allocator.free(htmlpath);
 
-    var output_file = try std.fs.cwd().openFile(htmlpath, .{});
-    defer output_file.close();
-    const output_text = try output_file.reader().readAllAlloc(std.testing.allocator, 1024 * 1024);
+    const output_text = try std.fs.cwd().readFileAlloc(
+        std.testing.allocator,
+        htmlpath,
+        1024 * 1024,
+    );
     defer allocator.free(output_text);
 
     const maybe_found = std.mem.indexOf(u8, output_text, expected_output);

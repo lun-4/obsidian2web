@@ -1,24 +1,24 @@
 .{
     .name = .obsidian2web,
     .version = "0.1.1",
-    .minimum_zig_version = "0.14.0",
+    .minimum_zig_version = "0.15.1",
     .fingerprint = 0xdb9a704608a0bb4a,
     .dependencies = .{
         .chrono = .{
-            .url = "git+https://github.com/lun-4/chrono-zig?ref=zig-014#c9e3f92d22acc0587c8f7646febd59b8751ee8f8",
-            .hash = "chrono-0.0.0-XcKmnqXLAwDJknlvxSX70NUFl1RJrhsqMUjZ1p1W3d-D",
+            .url = "git+https://github.com/lun-4/chrono-zig#206cc5764095180137d9476abd66993b001049f4",
+            .hash = "chrono-0.0.0-XcKmnoDKAwAga2sgC6SfTTWi322ROj7c9esMDhIuGK_z",
         },
         .koino = .{
-            .url = "git+https://github.com/lun-4/koino?ref=zig-014#8c53e980eaa065119f6d5bc10b961565ba600ef1",
-            .hash = "koino-0.1.0-S9LuWlCKAgA4O7pCXWTQA2hGL-iSHjdFK-SMx_D7I_lZ",
+            .url = "git+https://github.com/kivikakk/koino#0f10363e02ff575b008f219e54dc30ef8fad55db",
+            .hash = "koino-0.1.0-S9LuWkK-AgAjKVVFM7QfdiGiab87w3H9iSJJLI0ynuHr",
         },
         .libpcre_zig = .{
-            .url = "git+https://github.com/kivikakk/libpcre.zig#04224f0bed09888d043c6fe4352458dbd907c815",
-            .hash = "libpcre_zig-0.1.0-Dtf6CQg4AACWtDDhtI-rjGGLKdBowMQiQrK1O5sx5icv",
+            .url = "git+https://github.com/kivikakk/libpcre.zig#3f61efd01ec45281c4bc6f8f6d0ae7b718e7056e",
+            .hash = "libpcre_zig-0.1.0-Dtf6CQ04AACiOaA107r6fJ9BpThKZCzDeqp-v5Xv0Ixr",
         },
         .zig_uuid = .{
-            .url = "git+https://github.com/lun-4/zig-uuid#78122167bbefeccb89afcb75fdd85400773aa58b",
-            .hash = "zig_uuid-0.0.1-JWcRhNkcAACB_kHBB5tscJ9I8CCBHWr_V4pKTpAnYP9g",
+            .url = "git+https://github.com/lun-4/zig-uuid#3d8345ec69880187a3f72cd30b37e5d1d4a47650",
+            .hash = "zig_uuid-0.0.1-JWcRhCocAAB9SrZEOZFobn6gDXvBDV5Yraz8R35CXyT7",
         },
     },
     .paths = .{
